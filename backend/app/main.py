@@ -6,7 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
 from app.config import WATCHER_INTERVAL_MINUTES
-from app.watcher import run_watcher
+from app.watcher import run_watcher, run_cleanup
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,6 +19,7 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler.add_job(run_watcher, "interval", minutes=WATCHER_INTERVAL_MINUTES, id="watcher")
+    scheduler.add_job(run_cleanup, "cron", hour=3, minute=0, id="cleanup")
     scheduler.start()
     logging.info("Watcher scheduler started — running every %d minutes", WATCHER_INTERVAL_MINUTES)
     asyncio.create_task(run_watcher())

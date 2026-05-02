@@ -1,5 +1,6 @@
+from datetime import datetime, timezone, timedelta
 from supabase import create_client, Client
-from app.config import SUPABASE_URL, SUPABASE_KEY
+from app.config import SUPABASE_URL, SUPABASE_KEY, POST_RETENTION_DAYS
 
 _client: Client | None = None
 
@@ -23,6 +24,19 @@ def save_post(post_data: dict) -> str:
 
 def save_message(message_data: dict):
     get_client().table("messages").insert(message_data).execute()
+
+
+def purge_old_posts() -> int:
+    cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=POST_RETENTION_DAYS)).isoformat()
+    result = (
+        get_client()
+        .table("posts")
+        .delete()
+        .in_("status", ["new", "drafted"])
+        .lt("detected_at", cutoff)
+        .execute()
+    )
+    return len(result.data)
 
 
 def get_recent_drafts(limit: int = 5) -> list[str]:

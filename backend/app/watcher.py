@@ -6,8 +6,9 @@ from random import randint
 import httpx
 
 from app.config import SEARCH_TERMS, ANTHROPIC_API_KEY, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX
-from app.database import post_exists, save_post, save_message, get_recent_drafts
+from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts
 from app.scorer import score_and_draft
+from app.notifications import send_notification
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,14 @@ async def process_term(term: str, recent_drafts: list[str]):
         post_id = save_post(post_data)
         new_count += 1
 
+        if score is not None:
+            send_notification(
+                post={**post_data, "reddit_post_id": reddit_post_id},
+                score=score,
+                reason=reason,
+                draft=draft,
+            )
+
         if draft:
             send_after = (
                 datetime.now(tz=timezone.utc)
@@ -125,3 +134,9 @@ async def run_watcher():
             await asyncio.sleep(2)
 
     logger.info("Watcher run complete")
+
+
+def run_cleanup():
+    deleted = purge_old_posts()
+    if deleted:
+        logger.info("Cleanup: purged %d stale post(s)", deleted)
