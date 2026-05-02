@@ -67,11 +67,17 @@ async def process_term(term: str, recent_drafts: list[str]):
         else:
             result = None
 
-        score = result["score"] if result else 0
-        reason = result["reason"] if result else "Anthropic API key not configured"
+        if ANTHROPIC_API_KEY and result is None:
+            # API key set but call failed — skip this post, will retry next cycle
+            logger.warning("Scoring failed for post %s — check ANTHROPIC_API_KEY", reddit_post_id)
+            continue
+
+        score = result["score"] if result else None
+        reason = result["reason"] if result else "Pending — API key not configured"
         draft = result.get("draft", "") if result else ""
 
-        if score <= 2:
+        # With API key: discard score 1-2. Without API key: save everything that passed basic filter.
+        if score is not None and score <= 2:
             continue
 
         post_data = {
