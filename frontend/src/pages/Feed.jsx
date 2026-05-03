@@ -8,8 +8,6 @@ import SetupChecklist from '../components/SetupChecklist'
 const TIME_FILTERS = [
   { label: 'Past hour', value: 'hour' },
   { label: 'Today', value: 'today' },
-  { label: 'Past 3 days', value: '3days' },
-  { label: 'Past week', value: 'week' },
 ]
 
 function filterCutoff(value) {
