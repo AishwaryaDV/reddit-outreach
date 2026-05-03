@@ -1,4 +1,5 @@
 import json
+import re
 import logging
 from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
 from app.config import PORTFOLIO_URL
@@ -100,10 +101,49 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
             logger.warning("Agent SDK returned empty response")
             return None
 
-        return json.loads(text.strip())
-    except json.JSONDecodeError as e:
-        logger.error("Failed to parse scorer JSON: %s | raw: %s", e, text[:200])
-        return None
+        return _extract_and_validate(text)
     except Exception as e:
         logger.error("Scorer error: %s", e)
+        return None
+
+
+def _extract_and_validate(text: str) -> dict | None:
+    # Try 1: direct parse
+    data = _try_parse(text.strip())
+
+    # Try 2: strip markdown code fences
+    if data is None:
+        stripped = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
+        data = _try_parse(stripped)
+
+    # Try 3: find first {...} block containing "score"
+    if data is None:
+        match = re.search(r'\{[^{}]*"score"[^{}]*\}', text, re.DOTALL)
+        if match:
+            data = _try_parse(match.group())
+
+    if data is None:
+        logger.error("Could not extract JSON from scorer response | raw: %s", text[:300])
+        return None
+
+    # Validate required fields and types
+    score = data.get("score")
+    if not isinstance(score, int) or not (1 <= score <= 10):
+        logger.error("Invalid score value: %s", score)
+        return None
+
+    data.setdefault("reason", "")
+    data.setdefault("draft", "")
+
+    # Enforce: no draft for low scores
+    if score <= 2:
+        data["draft"] = ""
+
+    return data
+
+
+def _try_parse(text: str) -> dict | None:
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
         return None

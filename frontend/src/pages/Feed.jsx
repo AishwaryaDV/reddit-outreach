@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import ScoreBadge from '../components/ScoreBadge'
 import UrgencyDot from '../components/UrgencyDot'
+import SetupChecklist from '../components/SetupChecklist'
 
 const TIME_FILTERS = [
   { label: 'Past hour', value: 'hour' },
@@ -13,7 +14,7 @@ const TIME_FILTERS = [
 
 function filterCutoff(value) {
   const now = new Date()
-  if (value === 'hour') return new Date(now - 60 * 60 * 1000).toISOString()
+  if (value === 'hour')  return new Date(now - 60 * 60 * 1000).toISOString()
   if (value === 'today') return new Date(now - 24 * 60 * 60 * 1000).toISOString()
   if (value === '3days') return new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString()
   return new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -53,10 +54,14 @@ export default function Feed() {
 
   return (
     <div>
+      <SetupChecklist />
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-white">Feed</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{posts.length} post{posts.length !== 1 ? 's' : ''} detected</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {posts.length} post{posts.length !== 1 ? 's' : ''} detected
+          </p>
         </div>
         <select
           value={timeFilter}
@@ -74,10 +79,7 @@ export default function Feed() {
           Loading posts...
         </div>
       ) : posts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-48 text-slate-500 text-sm gap-2">
-          <span>No posts detected in this window</span>
-          <span className="text-xs text-slate-600">The watcher runs every 2 minutes</span>
-        </div>
+        <EmptyState />
       ) : (
         <div className="flex flex-col gap-3">
           {posts.map((post) => (
@@ -93,30 +95,51 @@ export default function Feed() {
   )
 }
 
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
+      <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
+        <span className="text-slate-500 text-sm">○</span>
+      </div>
+      <div>
+        <p className="text-slate-400 text-sm">No posts in this window</p>
+        <p className="text-slate-600 text-xs mt-1">Watcher runs every 2 minutes — posts appear here in real time</p>
+      </div>
+    </div>
+  )
+}
+
 function PostCard({ post, onClick }) {
-  const ageMin = (Date.now() - new Date(post.detected_at).getTime()) / 60_000
+  // urgency based on how old the Reddit post is (posted_at), not when we detected it
+  const ageMin = (Date.now() - new Date(post.posted_at).getTime()) / 60_000
   const urgencyBorder =
-    ageMin < 30 ? 'border-emerald-500/30' :
-    ageMin < 90 ? 'border-yellow-500/30' :
-                  'border-red-500/30'
+    ageMin < 30 ? 'border-emerald-500/30 hover:border-emerald-500/50' :
+    ageMin < 90 ? 'border-yellow-500/30 hover:border-yellow-500/50' :
+                  'border-red-500/20 hover:border-red-500/40'
 
   return (
     <div
       onClick={onClick}
-      className={`bg-white/3 border ${urgencyBorder} rounded-xl p-4 cursor-pointer hover:bg-white/6 transition-colors group`}
+      className={`bg-white/3 border ${urgencyBorder} rounded-xl p-4 cursor-pointer hover:bg-white/5 transition-all group`}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-xs text-slate-500">r/{post.subreddit}</span>
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <span className="text-xs font-medium text-slate-400">r/{post.subreddit}</span>
             <span className="text-slate-700">·</span>
             <UrgencyDot postedAt={post.posted_at} />
+            {post.author && (
+              <>
+                <span className="text-slate-700">·</span>
+                <span className="text-xs text-slate-600">u/{post.author}</span>
+              </>
+            )}
           </div>
-          <h3 className="text-sm font-medium text-white leading-snug line-clamp-2 group-hover:text-slate-100">
+          <h3 className="text-sm font-medium text-white leading-snug line-clamp-2 group-hover:text-slate-100 mb-1.5">
             {post.title}
           </h3>
           {post.score_reason && (
-            <p className="text-xs text-slate-500 mt-1.5 line-clamp-1">{post.score_reason}</p>
+            <p className="text-xs text-slate-500 line-clamp-1">{post.score_reason}</p>
           )}
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
@@ -130,10 +153,10 @@ function PostCard({ post, onClick }) {
 
 function StatusPill({ status }) {
   const styles = {
-    new: 'bg-slate-500/15 text-slate-400',
-    drafted: 'bg-blue-500/15 text-blue-400',
-    approved: 'bg-purple-500/15 text-purple-400',
-    sent: 'bg-emerald-500/15 text-emerald-400',
+    new:       'bg-slate-500/15 text-slate-400',
+    drafted:   'bg-blue-500/15 text-blue-400',
+    approved:  'bg-purple-500/15 text-purple-400',
+    sent:      'bg-emerald-500/15 text-emerald-400',
     cancelled: 'bg-red-500/15 text-red-400',
   }
   return (
