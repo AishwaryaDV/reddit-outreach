@@ -1,6 +1,9 @@
 import json
-import anthropic
-from app.config import ANTHROPIC_API_KEY, PORTFOLIO_URL
+import logging
+from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
+from app.config import PORTFOLIO_URL
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = f"""You are a filter for a personal Reddit job outreach tool. The owner is a freelance fullstack developer (3 years experience, React specialist, also does Node/backend, MVP builds, web apps).
 
@@ -72,26 +75,35 @@ Return ONLY valid JSON in this exact format, no other text:
 }}"""
 
 
-def score_and_draft(title: str, body: str, recent_drafts: list[str] | None = None) -> dict | None:
-    if not ANTHROPIC_API_KEY:
-        return None
-
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
+async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None = None) -> dict | None:
     recent_context = ""
     if recent_drafts:
         recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
 
     user_message = f"Post title: {title}\n\nPost body: {body or '(no body)'}{recent_context}"
 
+    options = ClaudeAgentOptions(
+        system_prompt=SYSTEM_PROMPT,
+        max_turns=1,
+        allowed_tools=[],
+    )
+
     try:
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=512,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
-        raw = response.content[0].text.strip()
-        return json.loads(raw)
-    except (json.JSONDecodeError, IndexError, anthropic.APIError):
+        text = ""
+        async for message in query(prompt=user_message, options=options):
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        text += block.text
+
+        if not text:
+            logger.warning("Agent SDK returned empty response")
+            return None
+
+        return json.loads(text.strip())
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse scorer JSON: %s | raw: %s", e, text[:200])
+        return None
+    except Exception as e:
+        logger.error("Scorer error: %s", e)
         return None

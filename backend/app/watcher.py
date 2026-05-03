@@ -5,7 +5,7 @@ from random import randint
 
 import httpx
 
-from app.config import SEARCH_TERMS, ANTHROPIC_API_KEY, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX
+from app.config import SEARCH_TERMS, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX
 from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts
 from app.scorer import score_and_draft
 from app.notifications import send_notification
@@ -63,22 +63,17 @@ async def process_term(term: str, recent_drafts: list[str]):
         created_utc = post.get("created_utc", 0)
         posted_at = datetime.fromtimestamp(created_utc, tz=timezone.utc).isoformat()
 
-        if ANTHROPIC_API_KEY:
-            result = score_and_draft(title, body, recent_drafts)
-        else:
-            result = None
+        result = await score_and_draft(title, body, recent_drafts)
 
-        if ANTHROPIC_API_KEY and result is None:
-            # API key set but call failed — skip this post, will retry next cycle
-            logger.warning("Scoring failed for post %s — check ANTHROPIC_API_KEY", reddit_post_id)
+        if result is None:
+            logger.warning("Scoring failed for post %s — skipping", reddit_post_id)
             continue
 
-        score = result["score"] if result else None
-        reason = result["reason"] if result else "Pending — API key not configured"
-        draft = result.get("draft", "") if result else ""
+        score = result["score"]
+        reason = result["reason"]
+        draft = result.get("draft", "")
 
-        # With API key: discard score 1-2. Without API key: save everything that passed basic filter.
-        if score is not None and score <= 2:
+        if score <= 2:
             continue
 
         post_data = {
@@ -125,10 +120,6 @@ async def process_term(term: str, recent_drafts: list[str]):
 
 
 async def run_watcher():
-    if not ANTHROPIC_API_KEY:
-        logger.warning("ANTHROPIC_API_KEY not set — watcher running in dry-run mode, no posts will be saved")
-        return
-
     logger.info("Watcher run started")
     recent_drafts = get_recent_drafts(limit=5)
 
