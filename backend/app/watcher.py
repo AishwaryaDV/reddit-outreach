@@ -125,6 +125,10 @@ async def process_term(term: str, recent_drafts: list[str]):
 
 
 async def run_watcher():
+    if not ANTHROPIC_API_KEY:
+        logger.warning("ANTHROPIC_API_KEY not set — watcher running in dry-run mode, no posts will be saved")
+        return
+
     logger.info("Watcher run started")
     recent_drafts = get_recent_drafts(limit=5)
 
