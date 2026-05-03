@@ -39,8 +39,8 @@ def is_obvious_skip(title: str, body: str) -> bool:
     return False
 
 
-async def process_term(term: str, recent_drafts: list[str]):
-    posts = await fetch_posts(term)
+async def process_term(term: str, recent_drafts: list[str], time_filter: str = "hour"):
+    posts = await fetch_posts(term, time_filter)
     new_count = 0
 
     for wrapper in posts:
@@ -119,12 +119,12 @@ async def process_term(term: str, recent_drafts: list[str]):
         logger.info("Term '%s' — %d new post(s) saved", term, new_count)
 
 
-async def run_watcher():
-    logger.info("Watcher run started")
+async def run_watcher(time_filter: str = "hour"):
+    logger.info("Watcher run started (filter: %s)", time_filter)
     recent_drafts = get_recent_drafts(limit=5)
 
     for i, term in enumerate(SEARCH_TERMS):
-        await process_term(term, recent_drafts)
+        await process_term(term, recent_drafts, time_filter)
         if i < len(SEARCH_TERMS) - 1:
             await asyncio.sleep(2)
 

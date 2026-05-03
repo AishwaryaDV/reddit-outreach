@@ -57,3 +57,9 @@ def status():
 async def trigger_watcher():
     asyncio.create_task(run_watcher())
     return {"status": "watcher triggered"}
+
+
+@app.get("/watcher/backfill")
+async def trigger_backfill():
+    asyncio.create_task(run_watcher(time_filter="day"))
+    return {"status": "backfill triggered — searching all 14 terms for past 24h"}
