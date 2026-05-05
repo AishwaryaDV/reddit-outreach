@@ -59,22 +59,45 @@ need a fullstack developer
 
 ## The Filter Pipeline
 
-Each of the up to 50 posts per term passes through these checks before reaching Claude:
+Each of the up to 50 posts per term passes through filters in order. The goal is to eliminate as much noise as possible **before** reaching Claude, since every Claude call uses quota.
 
-### 1. Has a Reddit post ID
-Every valid Reddit post has a unique ID. If missing, skip. (Practically never triggered.)
+### Filter 1 — Has a Reddit post ID
+Every valid Reddit post has a unique ID. If missing, skip. Practically never triggered — exists as a safety net.
 
-### 2. Deduplication check
+### Filter 2 — Deduplication
 `post_exists(reddit_post_id)` queries the database. If the post is already saved, skip it.
 
-This is the most powerful filter after the first run — since posts from the last hour overlap heavily between 15-minute cycles, most posts are already known. The same post can match multiple search terms but will only ever be scored once.
+This is the strongest filter after the first run. Since we fetch the last hour every 15 minutes, there is always a 45-minute overlap — most posts in any given run are already known. The same post can match multiple search terms but is only ever scored once.
 
-### 3. Obvious skip check (`is_obvious_skip`)
-Hard rules that skip a post without calling Claude:
-- Title contains `[for hire]` — the poster is offering services, not looking to hire
+### Filter 3 — Obvious skip (`is_obvious_skip`)
+Hard rules that discard a post without calling Claude:
+
+**Currently in place:**
+- Title contains `[for hire]` — poster is selling services, not hiring
 - Body is empty, `[deleted]`, or `[removed]` — no content to evaluate
 
-Posts that pass all three checks are sent to Claude for scoring.
+**Planned additions (to be implemented):**
+- Body under 150 characters — real hiring posts have scope and detail; very short posts are rarely actionable
+- Title or body contains blocklist phrases: `revenue share`, `sweat equity`, `equity only`, `unpaid`, `volunteer`, `no budget`, `no pay`, `for free`, `student project`
+- Title or body contains none of the signal words: `budget`, `paid`, `pay`, `rate`, `hourly`, `contract`, `freelance`, `hire`, `project` — if none present, likely not a real opportunity
+
+### Filter 4 — Score gate (post-Claude)
+After Claude scores the post, any post scoring ≤ 2 is discarded and not saved. This is a last-resort catch for posts that slipped through the pre-filters but are clearly irrelevant.
+
+The goal of filters 1–3 is to prevent wasting Claude calls on posts that would be discarded at filter 4 anyway.
+
+---
+
+### Filter pipeline summary
+
+| # | Stage | Check | Claude cost |
+|---|---|---|---|
+| 1 | Pre-Claude | Has Reddit post ID | None |
+| 2 | Pre-Claude | Already in database | None |
+| 3 | Pre-Claude | `is_obvious_skip` — blocklist, length, signal words | None |
+| 4 | Post-Claude | Score ≤ 2 → discard | 1 Claude call spent |
+
+Only posts that pass filters 1–3 reach Claude. Only posts that pass filter 4 are saved.
 
 ---
 
