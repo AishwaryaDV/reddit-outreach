@@ -30,12 +30,50 @@ async def fetch_posts(term: str, time_filter: str = "hour") -> list[dict]:
             return []
 
 
+_JOB_SEEKER_PHRASES = [
+    "looking for work", "looking for a job", "open to work",
+    "available for work", "seeking work", "seeking opportunities",
+    "portfolio review", "rate my portfolio", "just launched", "just finished",
+]
+
+_NO_PAY_PHRASES = [
+    "revenue share", "rev share",
+    "sweat equity", "equity only",
+    "unpaid", "no budget", "no pay", "work for free", "pro bono",
+    "volunteer",
+    "student project", "school project", "class project", "uni project",
+    "spec work",
+]
+
+
 def is_obvious_skip(title: str, body: str) -> bool:
     title_lower = title.lower()
+    body_clean = (body or "").strip()
+    body_lower = body_clean.lower()
+
+    # Poster is offering services, not hiring
     if "[for hire]" in title_lower:
         return True
-    if not body or body.strip() in ("", "[deleted]", "[removed]"):
+
+    # No content
+    if not body_clean or body_clean in ("[deleted]", "[removed]"):
         return True
+
+    # Too short to be a real hiring post
+    if len(body_clean) < 150:
+        return True
+
+    # Poster is the job seeker, not the hirer
+    if title_lower.startswith("[h]"):
+        return True
+    if any(phrase in title_lower for phrase in _JOB_SEEKER_PHRASES):
+        return True
+
+    # No-pay or scam signals in title or body
+    combined = title_lower + " " + body_lower
+    if any(phrase in combined for phrase in _NO_PAY_PHRASES):
+        return True
+
     return False
 
 
