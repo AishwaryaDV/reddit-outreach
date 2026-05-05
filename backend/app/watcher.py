@@ -17,7 +17,7 @@ REDDIT_SEARCH_URL = "https://www.reddit.com/search.json"
 
 
 async def fetch_posts(term: str, time_filter: str = "hour") -> list[dict]:
-    params = {"q": term, "sort": "new", "t": time_filter, "limit": 25}
+    params = {"q": term, "sort": "new", "t": time_filter, "limit": 50}
     async with httpx.AsyncClient(headers=REDDIT_HEADERS, timeout=15) as client:
         try:
             response = await client.get(REDDIT_SEARCH_URL, params=params)

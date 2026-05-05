@@ -61,15 +61,18 @@ export default function Feed() {
             {posts.length} post{posts.length !== 1 ? 's' : ''} detected
           </p>
         </div>
-        <select
-          value={timeFilter}
-          onChange={(e) => setTimeFilter(e.target.value)}
-          className="bg-white/5 border border-white/10 text-slate-300 text-sm rounded-lg px-3 py-2 outline-none cursor-pointer hover:bg-white/8"
-        >
-          {TIME_FILTERS.map((f) => (
-            <option key={f.value} value={f.value}>{f.label}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <BackfillButton />
+          <select
+            value={timeFilter}
+            onChange={(e) => setTimeFilter(e.target.value)}
+            className="bg-white/5 border border-white/10 text-slate-300 text-sm rounded-lg px-3 py-2 outline-none cursor-pointer hover:bg-white/8"
+          >
+            {TIME_FILTERS.map((f) => (
+              <option key={f.value} value={f.value}>{f.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {loading ? (
@@ -101,7 +104,7 @@ function EmptyState() {
       </div>
       <div>
         <p className="text-slate-400 text-sm">No posts in this window</p>
-        <p className="text-slate-600 text-xs mt-1">Watcher runs every 2 minutes — posts appear here in real time</p>
+        <p className="text-slate-600 text-xs mt-1">Watcher runs every 15 minutes — posts appear here in real time</p>
       </div>
     </div>
   )
@@ -144,6 +147,42 @@ function PostCard({ post, onClick }) {
           <ScoreBadge score={post.score} />
           <StatusPill status={post.status} />
         </div>
+      </div>
+    </div>
+  )
+}
+
+function BackfillButton() {
+  const [state, setState] = useState('idle') // idle | loading | done
+
+  async function handleClick() {
+    if (state !== 'idle') return
+    setState('loading')
+    try {
+      await fetch('http://localhost:8000/watcher/backfill')
+    } catch {
+      // fire-and-forget — backend runs it async
+    }
+    setState('done')
+    setTimeout(() => setState('idle'), 3000)
+  }
+
+  const label =
+    state === 'loading' ? 'Triggering…' :
+    state === 'done'    ? 'Triggered ✓' :
+                          'Backfill 24h'
+
+  return (
+    <div className="relative group">
+      <button
+        onClick={handleClick}
+        disabled={state !== 'idle'}
+        className="text-xs px-3 py-2 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 hover:text-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {label}
+      </button>
+      <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-xl">
+        Fetches all posts from the last 24 hours. Use this after restarting the server to fill any gaps the watcher may have missed.
       </div>
     </div>
   )
