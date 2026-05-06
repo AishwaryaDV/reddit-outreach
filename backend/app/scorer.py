@@ -84,6 +84,7 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
     user_message = f"Post title: {title}\n\nPost body: {body or '(no body)'}{recent_context}"
 
     options = ClaudeAgentOptions(
+        model="claude-haiku-4-5-20251001",
         system_prompt=SYSTEM_PROMPT,
         max_turns=1,
         allowed_tools=[],
