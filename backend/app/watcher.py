@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 from random import randint
 
@@ -30,10 +31,13 @@ async def fetch_posts(term: str, time_filter: str = "hour") -> list[dict]:
             return []
 
 
+_URL_RE = re.compile(r"https?://\S+")
+
 _JOB_SEEKER_PHRASES = [
     "looking for work", "looking for a job", "open to work",
     "available for work", "seeking work", "seeking opportunities",
     "portfolio review", "rate my portfolio", "just launched", "just finished",
+    "hire me", "looking for advice", "looking for suggestion", "looking for suggestions",
 ]
 
 _NO_PAY_PHRASES = [
@@ -45,11 +49,15 @@ _NO_PAY_PHRASES = [
     "spec work",
 ]
 
+_PLATFORM_BLOCKLIST = ["micro1"]
 
-def is_obvious_skip(title: str, body: str) -> bool:
+
+def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = "") -> bool:
     title_lower = title.lower()
     body_clean = (body or "").strip()
     body_lower = body_clean.lower()
+    subreddit_lower = subreddit.lower()
+    author_lower = author.lower()
 
     # Poster is offering services, not hiring
     if "[for hire]" in title_lower:
@@ -63,14 +71,31 @@ def is_obvious_skip(title: str, body: str) -> bool:
     if len(body_clean) < 150:
         return True
 
+    # Short title paired with thin body — combined signal of a low-effort post
+    if len(title.strip()) < 20 and len(body_clean) < 300:
+        return True
+
+    # Body is essentially just a URL with no real description
+    body_without_urls = _URL_RE.sub("", body_clean).strip()
+    if len(body_without_urls) < 50:
+        return True
+
+    # Job board subreddit posting scraped listings with a link and minimal text
+    if "job" in subreddit_lower and len(body_without_urls) < 200:
+        return True
+
     # Poster is the job seeker, not the hirer
     if title_lower.startswith("[h]"):
         return True
     if any(phrase in title_lower for phrase in _JOB_SEEKER_PHRASES):
         return True
 
-    # No-pay or scam signals in title or body
+    # Blocked platforms (scrapers, low-signal job boards)
     combined = title_lower + " " + body_lower
+    if any(platform in combined or platform == author_lower for platform in _PLATFORM_BLOCKLIST):
+        return True
+
+    # No-pay or scam signals in title or body
     if any(phrase in combined for phrase in _NO_PAY_PHRASES):
         return True
 
@@ -92,12 +117,11 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
 
         title = post.get("title", "")
         body = post.get("selftext", "")
-
-        if is_obvious_skip(title, body):
-            continue
-
         author = post.get("author", "")
         subreddit = post.get("subreddit", "")
+
+        if is_obvious_skip(title, body, subreddit, author):
+            continue
         created_utc = post.get("created_utc", 0)
         posted_at = datetime.fromtimestamp(created_utc, tz=timezone.utc).isoformat()
 
