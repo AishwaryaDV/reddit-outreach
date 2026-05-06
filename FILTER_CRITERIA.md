@@ -123,6 +123,46 @@ Skip if either contains any of:
 
 ---
 
+## Filter 10 — Location-restricted roles
+
+Applied to: **title + body combined**
+
+Skip if either contains any of:
+- `must be located in`
+- `must be based in`
+- `must live in`
+- `us only`
+- `usa only`
+- `united states only`
+- `us-based only`
+- `must be in the us`
+- `must be in the usa`
+
+Only remote-friendly opportunities are relevant. Geography-locked roles are a hard skip regardless of stack or budget.
+
+*Derived from: BAD-01 in SAMPLE_POSTS.md*
+
+---
+
+## Filter 11 — Onsite / in-person roles
+
+Applied to: **title + body combined**
+
+Skip if either contains any of:
+- `onsite`
+- `on-site`
+- `on site`
+- `in-person`
+- `in person`
+- `in office`
+- `in-office`
+- `must relocate`
+- `office-based`
+
+*Derived from: BAD-06 in SAMPLE_POSTS.md*
+
+---
+
 ## Filters under consideration (not yet implemented)
 
 - **No pay/budget signal** — skip if neither title nor body contains any of: `budget`, `paid`, `pay`, `rate`, `hourly`, `salary`, `compensation`, `$`, `€`, `£`. Useful but aggressive — may produce false negatives on genuine posts that don't mention budget upfront. Hold until sample posts are reviewed.
@@ -140,3 +180,5 @@ Skip if either contains any of:
 - Filter 7 → `_JOB_SEEKER_PHRASES` list
 - Filter 8 → `_PLATFORM_BLOCKLIST` list
 - Filter 9 → `_NO_PAY_PHRASES` list
+- Filter 10 → `_LOCATION_PHRASES` list
+- Filter 11 → `_ONSITE_PHRASES` list

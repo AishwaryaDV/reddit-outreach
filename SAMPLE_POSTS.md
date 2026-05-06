@@ -124,10 +124,10 @@ These bad post types are NOT caught by current pre-filters and rely on Claude sc
 
 | Bad post type | Currently caught? | Suggested fix |
 |---|---|---|
-| US/location-only requirement | ❌ No | Add location blocklist: `must be located in`, `must be based in`, `us only`, `usa only` |
+| US/location-only requirement | ✅ Filter 10 | `_LOCATION_PHRASES` in `watcher.py` |
 | Staffing agency / English focus | ❌ No | Claude scoring (low score) or future agency signal filter |
 | Proxy interviewer / non-dev role | ❌ No | Claude scoring (low score) |
-| Onsite / in-person roles | ❌ No | Add onsite blocklist: `onsite`, `on-site`, `in-person`, `in office`, `must relocate` |
+| Onsite / in-person roles | ✅ Filter 11 | `_ONSITE_PHRASES` in `watcher.py` |
 | Cross-posted job board listing | ✅ Partial | URL-only body + micro1 blocklist catches most |
 
 ---

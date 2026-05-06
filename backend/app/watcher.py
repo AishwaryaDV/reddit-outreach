@@ -51,6 +51,17 @@ _NO_PAY_PHRASES = [
 
 _PLATFORM_BLOCKLIST = ["micro1"]
 
+_LOCATION_PHRASES = [
+    "must be located in", "must be based in", "must live in",
+    "us only", "usa only", "united states only", "us-based only",
+    "must be in the us", "must be in the usa",
+]
+
+_ONSITE_PHRASES = [
+    "onsite", "on-site", "on site", "in-person", "in person",
+    "in office", "in-office", "must relocate", "office-based",
+]
+
 
 def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = "") -> bool:
     title_lower = title.lower()
@@ -97,6 +108,14 @@ def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = ""
 
     # No-pay or scam signals in title or body
     if any(phrase in combined for phrase in _NO_PAY_PHRASES):
+        return True
+
+    # Location-restricted (geography-locked roles)
+    if any(phrase in combined for phrase in _LOCATION_PHRASES):
+        return True
+
+    # Onsite / in-person only roles
+    if any(phrase in combined for phrase in _ONSITE_PHRASES):
         return True
 
     return False
