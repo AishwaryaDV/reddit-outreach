@@ -49,7 +49,20 @@ _NO_PAY_PHRASES = [
     "spec work",
 ]
 
-_PLATFORM_BLOCKLIST = ["micro1"]
+_PLATFORM_BLOCKLIST = ["micro1", "mercor"]
+
+_SUBREDDIT_BLOCKLIST = [
+    "jobboards", "networkingjobs", "forhire",
+]
+
+_IRRELEVANT_STACKS = [
+    "cobol", "mainframe", "jcl", "vsam", "cics", "ibm z/os",
+    "electron", "electronjs",
+]
+
+_MICROTASK_PHRASES = [
+    "typing speed", "upvote the post", "slots available", "hurry up",
+]
 
 _LOCATION_PHRASES = [
     "must be located in", "must be based in", "must live in",
@@ -95,6 +108,10 @@ def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = ""
     if "job" in subreddit_lower and len(body_without_urls) < 200:
         return True
 
+    # Explicitly blocked subreddits
+    if subreddit_lower in _SUBREDDIT_BLOCKLIST:
+        return True
+
     # Poster is the job seeker, not the hirer
     if title_lower.startswith("[h]"):
         return True
@@ -118,6 +135,14 @@ def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = ""
     if any(phrase in combined for phrase in _ONSITE_PHRASES):
         return True
 
+    # Irrelevant tech stacks (title only — safer than body to avoid false positives)
+    if any(stack in title_lower for stack in _IRRELEVANT_STACKS):
+        return True
+
+    # Microtask / spam signals
+    if any(phrase in combined for phrase in _MICROTASK_PHRASES):
+        return True
+
     return False
 
 
@@ -130,6 +155,8 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
         reddit_post_id = post.get("id")
 
         if not reddit_post_id:
+            continue
+        if post.get("over_18", False):
             continue
         if post_exists(reddit_post_id):
             continue

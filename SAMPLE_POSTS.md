@@ -106,29 +106,81 @@ We're looking for a male (21+) with strong English skills to join our team as a 
 ### BAD-06 — Onsite / in-person role
 
 **Why skip:** Requires physical presence. Only remote opportunities are relevant.
-**Filter catch:** ❌ Not currently caught — candidate for a location/onsite filter.
+**Filter catch:** ✅ Filter 11 — `_ONSITE_PHRASES`
 
 *(More examples to be added)*
 
 ---
 
-## GOOD POSTS — Posts worth a DM
+### BAD-07 — Micro1 job board scrape (FinTech variant)
 
-*(Add examples here as you find them)*
+**Why skip:** Same pattern as BAD-03. Auto-cross-posted from devitjobs.com by micro1. Not a direct hire.
+**Filter catch:** ✅ Caught by platform blocklist (micro1) + URL-only body filter
+
+```
+[HIRING][San Francisco Bay Area, California, JavaScript, Remote]
+🏢 micro1, based in San Francisco Bay Area, California is looking for a Fullstack Engineer (FinTech Experience)
+⚙️ Tech used: JavaScript, AWS, Lambda, CI/CD, CloudWatch, Cypress, Docker, EC2, Git
+💰 $140,000 - 200,000 / year
+📝 More details and option to apply: https://devitjobs.com/jobs/micro1-Fullstack-Engineer-FinTech-Experience/rdg
+```
+
+---
+
+### BAD-08 — Microtask / data entry spam
+
+**Why skip:** Not a development role. Microtask (typing job) posted as if it were a dev opportunity. Signals: "typing speed", "upvote the post", "slots available", "hurry up".
+**Filter catch:** ✅ Caught by microtask phrase filter
+
+```
+Hello everyone. Guys who have good typing speed and can work upto 4 hours everyday please
+upvote the post and DM me. You will be paid INR 300 - 500 depending upon different factors.
+There are 42 slots available right now. Hurry up!!!
+```
+
+---
+
+### BAD-09 — Irrelevant tech stack (COBOL) + location restricted
+
+**Why skip:** COBOL is a legacy mainframe language with zero relevance to web/fullstack development. Also US only.
+**Filter catch:** ✅ Caught by irrelevant stacks filter (title: "COBOL") + location filter ("US only")
+
+```
+[Hiring] [Remote] [US] - COBOL Code Reading / Writing Expert $80-$100/hour (US only)
+
+We are looking for experienced COBOL developers who can read, understand, debug, and write
+production-quality COBOL code. You will work on tasks that help train and evaluate AI models
+on legacy software engineering workflows, especially mainframe-style codebases.
+[...]
+* Please apply with the link - https://t.mercor.com/tt8EW
+```
+
+---
+
+### BAD-10 — Mercor recruitment platform
+
+**Why skip:** Mercor is a third-party recruitment platform (same pattern as Micro1). Posts link to their platform with an apply-via-link process, not a DM. Not a direct client.
+**Filter catch:** ✅ Caught by platform blocklist (`mercor` in body/author)
+
+*See BAD-09 body — Mercor link: `https://t.mercor.com/...`*
 
 ---
 
 ## Filter gaps identified from bad posts
 
-These bad post types are NOT caught by current pre-filters and rely on Claude scoring them low:
-
-| Bad post type | Currently caught? | Suggested fix |
+| Bad post type | Currently caught? | Filter |
 |---|---|---|
-| US/location-only requirement | ✅ Filter 10 | `_LOCATION_PHRASES` in `watcher.py` |
-| Staffing agency / English focus | ❌ No | Claude scoring (low score) or future agency signal filter |
+| US/location-only requirement | ✅ Yes | Filter 10 — `_LOCATION_PHRASES` |
+| Onsite / in-person roles | ✅ Yes | Filter 11 — `_ONSITE_PHRASES` |
+| Micro1 posts | ✅ Yes | Filter 8 — `_PLATFORM_BLOCKLIST` |
+| Mercor posts | ✅ Yes | Filter 8 — `_PLATFORM_BLOCKLIST` |
+| Job board scrapes | ✅ Yes | Filter 6 + Filter 8 |
+| Microtask / spam | ✅ Yes | Filter 12 — `_MICROTASK_PHRASES` |
+| Irrelevant tech stack (COBOL, Electron) | ✅ Yes | Filter 13 — `_IRRELEVANT_STACKS` |
+| NSFW posts | ✅ Yes | Filter 14 — `over_18` field check |
+| Blocked subreddits | ✅ Yes | Filter 15 — `_SUBREDDIT_BLOCKLIST` |
+| Staffing agency / English focus | ❌ No | Claude scoring (low score) |
 | Proxy interviewer / non-dev role | ❌ No | Claude scoring (low score) |
-| Onsite / in-person roles | ✅ Filter 11 | `_ONSITE_PHRASES` in `watcher.py` |
-| Cross-posted job board listing | ✅ Partial | URL-only body + micro1 blocklist catches most |
 
 ---
 

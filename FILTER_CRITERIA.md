@@ -163,6 +163,61 @@ Skip if either contains any of:
 
 ---
 
+## Filter 12 — Microtask and spam signals
+
+Applied to: **title + body combined**
+
+Skip if either contains any of:
+- `typing speed`
+- `upvote the post`
+- `slots available`
+- `hurry up`
+
+*Derived from: BAD-08 in SAMPLE_POSTS.md*
+
+---
+
+## Filter 13 — Irrelevant tech stacks
+
+Applied to: **title only** (safer than body — avoids false positives where a post mentions a legacy stack in passing)
+
+Skip if title contains any of:
+- `cobol`
+- `mainframe`
+- `jcl`
+- `vsam`
+- `cics`
+- `ibm z/os`
+- `electron`
+- `electronjs`
+
+To add more stacks: append to `_IRRELEVANT_STACKS` in `watcher.py` and list here.
+
+*Derived from: BAD-09 in SAMPLE_POSTS.md*
+
+---
+
+## Filter 14 — NSFW posts
+
+Applied to: **post metadata** (`over_18` field from Reddit API)
+
+Checked in `process_term` before `is_obvious_skip`. If the Reddit post is marked NSFW (`over_18: true`), skip immediately.
+
+---
+
+## Filter 15 — Blocked subreddits
+
+Applied to: **subreddit** (exact match, case-insensitive)
+
+Skip posts from any of these subreddits entirely:
+- `jobboards`
+- `networkingjobs`
+- `forhire`
+
+To add more: append to `_SUBREDDIT_BLOCKLIST` in `watcher.py` and list here.
+
+---
+
 ## Filters under consideration (not yet implemented)
 
 - **No pay/budget signal** — skip if neither title nor body contains any of: `budget`, `paid`, `pay`, `rate`, `hourly`, `salary`, `compensation`, `$`, `€`, `£`. Useful but aggressive — may produce false negatives on genuine posts that don't mention budget upfront. Hold until sample posts are reviewed.
@@ -182,3 +237,7 @@ Skip if either contains any of:
 - Filter 9 → `_NO_PAY_PHRASES` list
 - Filter 10 → `_LOCATION_PHRASES` list
 - Filter 11 → `_ONSITE_PHRASES` list
+- Filter 12 → `_MICROTASK_PHRASES` list
+- Filter 13 → `_IRRELEVANT_STACKS` list (title-only check)
+- Filter 14 → `post.get("over_18", False)` in `process_term`
+- Filter 15 → `_SUBREDDIT_BLOCKLIST` list (exact subreddit match)
