@@ -7,7 +7,7 @@ from random import randint
 import httpx
 
 from app.config import SEARCH_TERMS, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX
-from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts
+from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts, get_search_terms
 from app.scorer import score_and_draft
 from app.notifications import send_notification
 
@@ -233,9 +233,13 @@ async def run_watcher(time_filter: str = "hour"):
     logger.info("Watcher run started (filter: %s)", time_filter)
     recent_drafts = get_recent_drafts(limit=5)
 
-    for i, term in enumerate(SEARCH_TERMS):
+    db_terms = get_search_terms()
+    active_terms = db_terms if db_terms else SEARCH_TERMS
+    logger.info("Using %d search term(s) (%s)", len(active_terms), "from DB" if db_terms else "from config")
+
+    for i, term in enumerate(active_terms):
         await process_term(term, recent_drafts, time_filter)
-        if i < len(SEARCH_TERMS) - 1:
+        if i < len(active_terms) - 1:
             await asyncio.sleep(2)
 
     logger.info("Watcher run complete")

@@ -50,3 +50,17 @@ def get_recent_drafts(limit: int = 5) -> list[str]:
         .execute()
     )
     return [row["draft"] for row in result.data if row.get("draft")]
+
+
+def get_search_terms() -> list[str]:
+    try:
+        result = (
+            get_client()
+            .table("search_terms")
+            .select("term")
+            .eq("enabled", True)
+            .execute()
+        )
+        return [row["term"] for row in result.data if row.get("term")]
+    except Exception:
+        return []
