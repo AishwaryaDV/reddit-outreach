@@ -50,7 +50,7 @@ export default function MessageReview() {
   const [message, setMessage] = useState(null)
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(true)
-  const [action, setAction] = useState(null) // 'approving' | 'cancelling'
+  const [action, setAction] = useState(null) // 'approving' | 'disapproving'
 
   useEffect(() => {
     async function load() {
@@ -96,8 +96,8 @@ export default function MessageReview() {
     navigate('/')
   }
 
-  async function handleCancel() {
-    setAction('cancelling')
+  async function handleDisapprove() {
+    setAction('disapproving')
     if (message) {
       await supabase.from('messages').update({ status: 'cancelled' }).eq('id', message.id)
     }
@@ -135,6 +135,13 @@ export default function MessageReview() {
             <UrgencyDot postedAt={post.posted_at} />
             <ScoreBadge score={post.score} />
           </div>
+
+          {(post.num_comments > 0 || post.reddit_upvotes > 0) && (
+            <div className="flex items-center gap-3 text-xs text-slate-500">
+              {post.reddit_upvotes > 0 && <span>↑ {post.reddit_upvotes} upvotes</span>}
+              {post.num_comments > 0 && <span>💬 {post.num_comments} comments</span>}
+            </div>
+          )}
 
           <h2 className="text-white font-medium leading-snug">{post.title}</h2>
 
@@ -191,11 +198,11 @@ export default function MessageReview() {
                   {action === 'approving' ? 'Approving...' : 'Approve & Queue'}
                 </button>
                 <button
-                  onClick={handleCancel}
+                  onClick={handleDisapprove}
                   disabled={!!action}
                   className="px-4 bg-white/5 hover:bg-white/10 disabled:opacity-50 text-slate-400 hover:text-white text-sm rounded-lg py-2.5 transition-colors border border-white/8"
                 >
-                  {action === 'cancelling' ? '...' : 'Cancel'}
+                  {action === 'disapproving' ? '...' : 'Disapprove'}
                 </button>
               </div>
             </>
@@ -203,8 +210,7 @@ export default function MessageReview() {
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-8">
               <p className="text-slate-500 text-sm">No draft yet</p>
               <p className="text-slate-600 text-xs max-w-xs">
-                Add your Anthropic API key to enable Claude message drafting.
-                Posts will be scored and drafted automatically.
+                This post was scored but no draft was generated.
               </p>
             </div>
           )}

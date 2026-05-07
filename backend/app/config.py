@@ -35,4 +35,4 @@ GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 NOTIFY_EMAILS = [e.strip() for e in os.getenv("NOTIFY_EMAILS", "").split(",") if e.strip()]
 
 # Cleanup
-POST_RETENTION_DAYS = 15
+POST_RETENTION_DAYS = 5

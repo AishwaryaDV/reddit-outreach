@@ -10,55 +10,67 @@ const TIME_FILTERS = [
   { label: 'Today', value: 'today' },
 ]
 
+const STATUS_TABS = [
+  { label: 'All', value: 'all' },
+  { label: 'Approved', value: 'approved' },
+  { label: 'Disapproved', value: 'disapproved' },
+]
+
 function filterCutoff(value) {
   const now = new Date()
-  if (value === 'hour')  return new Date(now - 60 * 60 * 1000).toISOString()
-  if (value === 'today') return new Date(now - 24 * 60 * 60 * 1000).toISOString()
-  if (value === '3days') return new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString()
-  return new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString()
+  if (value === 'hour') return new Date(now - 60 * 60 * 1000).toISOString()
+  return new Date(now - 24 * 60 * 60 * 1000).toISOString()
 }
 
 export default function Feed() {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [timeFilter, setTimeFilter] = useState('today')
+  const [statusTab, setStatusTab] = useState('all')
   const navigate = useNavigate()
 
-  async function fetchPosts(filter) {
+  async function fetchPosts(time, tab) {
     setLoading(true)
-    const cutoff = filterCutoff(filter)
-    const { data } = await supabase
+    const cutoff = filterCutoff(time)
+    let query = supabase
       .from('posts')
       .select('*')
-      .neq('status', 'cancelled')
       .gte('detected_at', cutoff)
       .order('detected_at', { ascending: false })
+
+    if (tab === 'approved') {
+      query = query.in('status', ['approved', 'sent'])
+    } else if (tab === 'disapproved') {
+      query = query.eq('status', 'cancelled')
+    }
+
+    const { data } = await query
     setPosts(data ?? [])
     setLoading(false)
   }
 
   useEffect(() => {
-    fetchPosts(timeFilter)
+    fetchPosts(timeFilter, statusTab)
 
     const channel = supabase
       .channel('posts-feed')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, (payload) => {
-        setPosts((prev) => [payload.new, ...prev])
+        if (statusTab === 'all') setPosts((prev) => [payload.new, ...prev])
       })
       .subscribe()
 
     return () => supabase.removeChannel(channel)
-  }, [timeFilter])
+  }, [timeFilter, statusTab])
 
   return (
     <div>
       <SetupChecklist />
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-white">Feed</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {posts.length} post{posts.length !== 1 ? 's' : ''} detected
+            {posts.length} post{posts.length !== 1 ? 's' : ''}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -75,12 +87,28 @@ export default function Feed() {
         </div>
       </div>
 
+      <div className="flex gap-1 border-b border-white/8 mb-5">
+        {STATUS_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setStatusTab(tab.value)}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              statusTab === tab.value
+                ? 'text-white border-white'
+                : 'text-slate-500 border-transparent hover:text-slate-300'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
           Loading posts...
         </div>
       ) : posts.length === 0 ? (
-        <EmptyState />
+        <EmptyState tab={statusTab} />
       ) : (
         <div className="flex flex-col gap-3">
           {posts.map((post) => (
@@ -96,27 +124,36 @@ export default function Feed() {
   )
 }
 
-function EmptyState() {
+function EmptyState({ tab }) {
+  const messages = {
+    all: 'No posts in this window',
+    approved: 'No approved posts yet',
+    disapproved: 'No disapproved posts yet',
+  }
   return (
     <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
       <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
         <span className="text-slate-500 text-sm">○</span>
       </div>
       <div>
-        <p className="text-slate-400 text-sm">No posts in this window</p>
-        <p className="text-slate-600 text-xs mt-1">Watcher runs every 15 minutes — posts appear here in real time</p>
+        <p className="text-slate-400 text-sm">{messages[tab]}</p>
+        {tab === 'all' && (
+          <p className="text-slate-600 text-xs mt-1">Watcher runs every 15 minutes — posts appear here in real time</p>
+        )}
       </div>
     </div>
   )
 }
 
 function PostCard({ post, onClick }) {
-  // urgency based on how old the Reddit post is (posted_at), not when we detected it
   const ageMin = (Date.now() - new Date(post.posted_at).getTime()) / 60_000
   const urgencyBorder =
     ageMin < 30 ? 'border-emerald-500/30 hover:border-emerald-500/50' :
     ageMin < 90 ? 'border-yellow-500/30 hover:border-yellow-500/50' :
                   'border-red-500/20 hover:border-red-500/40'
+
+  const daysOld = Math.floor((Date.now() - new Date(post.detected_at).getTime()) / (1000 * 60 * 60 * 24))
+  const showAgeTag = (post.status === 'drafted' || post.status === 'new') && daysOld >= 1
 
   return (
     <div
@@ -145,7 +182,14 @@ function PostCard({ post, onClick }) {
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
           <ScoreBadge score={post.score} />
-          <StatusPill status={post.status} />
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            {showAgeTag && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400">
+                {daysOld}d old
+              </span>
+            )}
+            <StatusPill status={post.status} />
+          </div>
         </div>
       </div>
     </div>
@@ -153,7 +197,7 @@ function PostCard({ post, onClick }) {
 }
 
 function BackfillButton() {
-  const [state, setState] = useState('idle') // idle | loading | done
+  const [state, setState] = useState('idle')
 
   async function handleClick() {
     if (state !== 'idle') return
@@ -161,7 +205,7 @@ function BackfillButton() {
     try {
       await fetch('http://localhost:8000/watcher/backfill')
     } catch {
-      // fire-and-forget — backend runs it async
+      // fire-and-forget
     }
     setState('done')
     setTimeout(() => setState('idle'), 3000)

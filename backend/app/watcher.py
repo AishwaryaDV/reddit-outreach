@@ -194,6 +194,8 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
             "score": score,
             "score_reason": reason,
             "status": "drafted" if draft else "new",
+            "num_comments": post.get("num_comments", 0),
+            "reddit_upvotes": post.get("score", 0),
         }
 
         post_id = save_post(post_data)
