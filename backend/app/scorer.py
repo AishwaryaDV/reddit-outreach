@@ -77,35 +77,43 @@ Return ONLY valid JSON in this exact format, no other text:
 
 
 async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None = None) -> dict | None:
-    recent_context = ""
-    if recent_drafts:
-        recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
+    # MOCK — swap back to real scorer once Claude quota resets
+    return {
+        "score": 7,
+        "reason": "Mock score for pipeline testing — real scorer disabled",
+        "draft": "Saw your post and this looks right up my alley. I build React apps and MVPs for founders and small teams — here's my work: https://aishwaryadv.space",
+    }
 
-    user_message = f"Post title: {title}\n\nPost body: {body or '(no body)'}{recent_context}"
-
-    options = ClaudeAgentOptions(
-        model="claude-haiku-4-5-20251001",
-        system_prompt=SYSTEM_PROMPT,
-        max_turns=1,
-        allowed_tools=[],
-    )
-
-    try:
-        text = ""
-        async for message in query(prompt=user_message, options=options):
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        text += block.text
-
-        if not text:
-            logger.warning("Agent SDK returned empty response")
-            return None
-
-        return _extract_and_validate(text)
-    except Exception as e:
-        logger.error("Scorer error: %s", e)
-        return None
+    # --- REAL SCORER (re-enable when quota resets) ---
+    # recent_context = ""
+    # if recent_drafts:
+    #     recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
+    #
+    # user_message = f"Post title: {title}\n\nPost body: {body or '(no body)'}{recent_context}"
+    #
+    # options = ClaudeAgentOptions(
+    #     model="claude-haiku-4-5-20251001",
+    #     system_prompt=SYSTEM_PROMPT,
+    #     max_turns=1,
+    #     allowed_tools=[],
+    # )
+    #
+    # try:
+    #     text = ""
+    #     async for message in query(prompt=user_message, options=options):
+    #         if isinstance(message, AssistantMessage):
+    #             for block in message.content:
+    #                 if isinstance(block, TextBlock):
+    #                     text += block.text
+    #
+    #     if not text:
+    #         logger.warning("Agent SDK returned empty response")
+    #         return None
+    #
+    #     return _extract_and_validate(text)
+    # except Exception as e:
+    #     logger.error("Scorer error: %s", e)
+    #     return None
 
 
 def _extract_and_validate(text: str) -> dict | None:
