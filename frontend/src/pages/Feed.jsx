@@ -12,6 +12,7 @@ const TIME_FILTERS = [
 
 const STATUS_TABS = [
   { label: 'All', value: 'all' },
+  { label: 'Drafts', value: 'drafts' },
   { label: 'Approved', value: 'approved' },
   { label: 'Disapproved', value: 'disapproved' },
 ]
@@ -31,17 +32,20 @@ export default function Feed() {
 
   async function fetchPosts(time, tab) {
     setLoading(true)
-    const cutoff = filterCutoff(time)
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
     let query = supabase
       .from('posts')
       .select('*')
-      .gte('detected_at', cutoff)
       .order('detected_at', { ascending: false })
 
-    if (tab === 'approved') {
-      query = query.in('status', ['approved', 'sent'])
-    } else if (tab === 'disapproved') {
-      query = query.eq('status', 'cancelled')
+    if (tab === 'drafts') {
+      // stale unactioned drafts — older than 24h, time filter does not apply
+      query = query.eq('status', 'drafted').lt('detected_at', oneDayAgo)
+    } else {
+      query = query.gte('detected_at', filterCutoff(time))
+      if (tab === 'approved') query = query.in('status', ['approved', 'sent'])
+      else if (tab === 'disapproved') query = query.eq('status', 'cancelled')
     }
 
     const { data } = await query
@@ -127,6 +131,7 @@ export default function Feed() {
 function EmptyState({ tab }) {
   const messages = {
     all: 'No posts in this window',
+    drafts: 'No stale drafts — all posts reviewed within 24 hours',
     approved: 'No approved posts yet',
     disapproved: 'No disapproved posts yet',
   }
