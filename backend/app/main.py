@@ -3,14 +3,16 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import (
     WATCHER_INTERVAL_MINUTES, GMAIL_USER, GMAIL_APP_PASSWORD, NOTIFY_EMAILS,
-    APPROVAL_WINDOW_MIN, DAILY_DM_CAP, PORTFOLIO_URL, POST_RETENTION_DAYS,
+    APPROVAL_WINDOW_MIN, DAILY_DM_CAP, PORTFOLIO_URL, POST_RETENTION_DAYS, DRY_RUN,
 )
 from app.watcher import run_watcher, run_cleanup
+from app.sender import process_auto_sends, send_dm
+from app.database import get_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,6 +26,7 @@ scheduler = AsyncIOScheduler()
 async def lifespan(app: FastAPI):
     scheduler.add_job(run_watcher, "interval", minutes=WATCHER_INTERVAL_MINUTES, id="watcher")
     scheduler.add_job(run_cleanup, "cron", hour=3, minute=0, id="cleanup")
+    scheduler.add_job(process_auto_sends, "interval", minutes=1, id="auto_send")
     scheduler.start()
     logging.info("Watcher scheduler started — running every %d minutes", WATCHER_INTERVAL_MINUTES)
     asyncio.create_task(run_watcher())
@@ -37,7 +40,7 @@ app = FastAPI(title="Reddit Outreach API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:5174", "https://reddit.aishwaryadv.space"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -66,6 +69,30 @@ def get_config():
         "post_retention_days": POST_RETENTION_DAYS,
         "gmail_configured": bool(GMAIL_USER and GMAIL_APP_PASSWORD and NOTIFY_EMAILS),
     }
+
+
+@app.post("/messages/{message_id}/send")
+async def manual_send(message_id: str):
+    result = (
+        get_client()
+        .table("messages")
+        .select("id, post_id, final_message, draft, posts(author)")
+        .eq("id", message_id)
+        .in_("status", ["approved", "pending"])
+        .single()
+        .execute()
+    )
+    row = result.data
+    if not row:
+        raise HTTPException(status_code=404, detail="Message not found or not in sendable state")
+
+    author = (row.get("posts") or {}).get("author", "")
+    body = row.get("final_message") or row.get("draft") or ""
+    if not author or not body:
+        raise HTTPException(status_code=422, detail="Missing author or message body")
+
+    outcome = send_dm(row["id"], row["post_id"], author, body)
+    return outcome
 
 
 @app.get("/watcher/run")

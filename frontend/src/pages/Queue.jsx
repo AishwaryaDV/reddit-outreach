@@ -8,17 +8,18 @@ export default function Queue() {
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
 
-  useEffect(() => {
-    async function load() {
-      const { data } = await supabase
-        .from('messages')
-        .select('*, posts(*)')
-        .eq('status', 'approved')
-        .order('send_after', { ascending: true })
+  async function load() {
+    const { data } = await supabase
+      .from('messages')
+      .select('*, posts(*)')
+      .eq('status', 'approved')
+      .order('send_after', { ascending: true })
 
-      setItems(data ?? [])
-      setLoading(false)
-    }
+    setItems(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
     load()
   }, [])
 
@@ -54,6 +55,7 @@ export default function Queue() {
               key={item.id}
               item={item}
               onViewPost={() => navigate(`/review/${item.post_id}`)}
+              onSent={() => setItems((prev) => prev.filter((i) => i.id !== item.id))}
             />
           ))}
         </div>
@@ -62,10 +64,27 @@ export default function Queue() {
   )
 }
 
-function QueueCard({ item, onViewPost }) {
+function QueueCard({ item, onViewPost, onSent }) {
   const post = item.posts
   const sendAfter = item.send_after ? new Date(item.send_after) : null
   const isPast = sendAfter && sendAfter < new Date()
+  const [sending, setSending] = useState(false)
+  const [result, setResult] = useState(null)
+
+  async function handleSendNow() {
+    if (sending) return
+    setSending(true)
+    try {
+      const res = await fetch(`http://localhost:8000/messages/${item.id}/send`, { method: 'POST' })
+      const data = await res.json()
+      setResult(data)
+      setTimeout(() => onSent?.(), 1500)
+    } catch {
+      setResult({ sent: false, reason: 'Backend unreachable' })
+    } finally {
+      setSending(false)
+    }
+  }
 
   return (
     <div className="bg-white/3 border border-white/8 rounded-xl p-4">
@@ -98,25 +117,25 @@ function QueueCard({ item, onViewPost }) {
 
       <div className="flex items-center justify-between">
         <div className="text-xs text-slate-600">
-          {sendAfter ? (
+          {result ? (
+            result.sent
+              ? <span className="text-emerald-400">{result.dry_run ? 'Dry run — logged ✓' : 'Sent ✓'}</span>
+              : <span className="text-red-400">Failed: {result.reason}</span>
+          ) : sendAfter ? (
             isPast
-              ? <span className="text-amber-400">Scheduled time passed — waiting for Phase 4</span>
+              ? <span className="text-amber-400">Scheduled time passed</span>
               : <span>Scheduled: {sendAfter.toLocaleString()}</span>
           ) : (
             <span>No send time set</span>
           )}
         </div>
-        <div className="relative group">
-          <button
-            disabled
-            className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-600 bg-white/3 cursor-not-allowed opacity-50"
-          >
-            Send Now
-          </button>
-          <div className="absolute right-0 bottom-full mb-2 w-56 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-xl">
-            DM sending wires up in Phase 4 — needs Reddit karma first
-          </div>
-        </div>
+        <button
+          onClick={handleSendNow}
+          disabled={sending || !!result}
+          className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-300 bg-white/5 hover:bg-white/8 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {sending ? 'Sending…' : result ? 'Done' : 'Send Now'}
+        </button>
       </div>
     </div>
   )

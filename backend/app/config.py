@@ -34,5 +34,12 @@ GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 NOTIFY_EMAILS = [e.strip() for e in os.getenv("NOTIFY_EMAILS", "").split(",") if e.strip()]
 
+# Reddit DM sender
+REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
+REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
+REDDIT_USERNAME = os.getenv("REDDIT_USERNAME", "")
+REDDIT_PASSWORD = os.getenv("REDDIT_PASSWORD", "")
+DRY_RUN = os.getenv("DRY_RUN", "true").lower() != "false"
+
 # Cleanup
 POST_RETENTION_DAYS = 5
