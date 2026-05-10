@@ -75,6 +75,23 @@ _ONSITE_PHRASES = [
     "in office", "in-office", "must relocate", "office-based",
 ]
 
+# At least one of these must appear in the title — kills random posts Reddit's
+# fuzzy search returns that mention hiring terms only in passing in the body.
+_TITLE_SIGNALS = [
+    "hire", "hiring", "hired",
+    "looking for", "need a", "need an", "need someone",
+    "seeking", "wanted", "want a", "want an",
+    "developer", "engineer", "programmer", "coder",
+    "freelan", "web dev", "fullstack", "full stack", "full-stack",
+    "react", "node", "frontend", "front-end", "backend", "back-end",
+    "mvp", "web app", "website",
+]
+
+# Title-level hard stops — co-founder posts are not hiring posts.
+_TITLE_BLOCKLIST = [
+    "co-founder", "cofounder", "co founder",
+]
+
 
 def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = "") -> bool:
     title_lower = title.lower()
@@ -82,6 +99,16 @@ def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = ""
     body_lower = body_clean.lower()
     subreddit_lower = subreddit.lower()
     author_lower = author.lower()
+
+    # Title must contain at least one hiring-related signal word.
+    # Reddit's fuzzy search returns posts where terms appear anywhere in the body,
+    # so random posts (horror stories, advice threads, etc.) slip through without this.
+    if not any(signal in title_lower for signal in _TITLE_SIGNALS):
+        return True
+
+    # Co-founder posts are equity arrangements, not dev hires
+    if any(phrase in title_lower for phrase in _TITLE_BLOCKLIST):
+        return True
 
     # Poster is offering services, not hiring
     if "[for hire]" in title_lower:
@@ -146,7 +173,7 @@ def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = ""
     return False
 
 
-async def process_term(term: str, recent_drafts: list[str], time_filter: str = "hour"):
+async def process_term(term: str, recent_drafts: list[str], time_filter: str = "hour", seen_author_titles: set | None = None):
     posts = await fetch_posts(term, time_filter)
     new_count = 0
 
@@ -165,6 +192,13 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
         body = post.get("selftext", "")
         author = post.get("author", "")
         subreddit = post.get("subreddit", "")
+
+        # Deduplicate cross-posts: same author posting the same title to many subreddits
+        if seen_author_titles is not None:
+            fingerprint = f"{author.lower()}::{title.lower()[:80]}"
+            if fingerprint in seen_author_titles:
+                continue
+            seen_author_titles.add(fingerprint)
 
         if is_obvious_skip(title, body, subreddit, author):
             continue
@@ -232,13 +266,14 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
 async def run_watcher(time_filter: str = "hour"):
     logger.info("Watcher run started (filter: %s)", time_filter)
     recent_drafts = get_recent_drafts(limit=5)
+    seen_author_titles: set = set()
 
     db_terms = get_search_terms()
     active_terms = db_terms if db_terms else SEARCH_TERMS
     logger.info("Using %d search term(s) (%s)", len(active_terms), "from DB" if db_terms else "from config")
 
     for i, term in enumerate(active_terms):
-        await process_term(term, recent_drafts, time_filter)
+        await process_term(term, recent_drafts, time_filter, seen_author_titles)
         if i < len(active_terms) - 1:
             await asyncio.sleep(2)
 
