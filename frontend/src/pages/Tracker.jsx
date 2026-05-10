@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { timeAgo } from '../lib/time'
 import ScoreBadge from '../components/ScoreBadge'
 
 export default function Tracker() {
@@ -84,7 +85,7 @@ function TrackerCard({ item, onViewPost }) {
             {sentAt && (
               <>
                 <span className="text-slate-700">·</span>
-                <span className="text-xs text-slate-600">{sentAt.toLocaleDateString()}</span>
+                <span className="text-xs text-slate-600">sent {timeAgo(item.updated_at)}</span>
               </>
             )}
           </div>

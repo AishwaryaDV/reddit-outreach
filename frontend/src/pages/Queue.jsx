@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { timeAgo, timeUntil } from '../lib/time'
 import ScoreBadge from '../components/ScoreBadge'
 
 export default function Queue() {
@@ -98,6 +99,12 @@ function QueueCard({ item, onViewPost, onSent }) {
                 <span className="text-xs text-slate-600">u/{post.author}</span>
               </>
             )}
+            {post?.posted_at && (
+              <>
+                <span className="text-slate-700">·</span>
+                <span className="text-xs text-slate-600">posted {timeAgo(post.posted_at)}</span>
+              </>
+            )}
           </div>
           <h3
             className="text-sm font-medium text-white leading-snug line-clamp-1 hover:text-slate-200 cursor-pointer"
@@ -124,7 +131,7 @@ function QueueCard({ item, onViewPost, onSent }) {
           ) : sendAfter ? (
             isPast
               ? <span className="text-amber-400">Scheduled time passed</span>
-              : <span>Scheduled: {sendAfter.toLocaleString()}</span>
+              : <span className="text-slate-400">sends in {timeUntil(item.send_after)}</span>
           ) : (
             <span>No send time set</span>
           )}

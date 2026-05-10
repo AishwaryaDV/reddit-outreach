@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { timeAgo } from '../lib/time'
 import ScoreBadge from '../components/ScoreBadge'
 import UrgencyDot from '../components/UrgencyDot'
 import SetupChecklist from '../components/SetupChecklist'
@@ -28,7 +29,15 @@ export default function Feed() {
   const [loading, setLoading] = useState(true)
   const [timeFilter, setTimeFilter] = useState('today')
   const [statusTab, setStatusTab] = useState('all')
+  const [lastRunAt, setLastRunAt] = useState(null)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    fetch('http://localhost:8000/status')
+      .then((r) => r.json())
+      .then((d) => setLastRunAt(d.last_run_at))
+      .catch(() => {})
+  }, [])
 
   async function fetchPosts(time, tab) {
     setLoading(true)
@@ -40,7 +49,6 @@ export default function Feed() {
       .order('detected_at', { ascending: false })
 
     if (tab === 'drafts') {
-      // stale unactioned drafts — older than 24h, time filter does not apply
       query = query.eq('status', 'drafted').lt('detected_at', oneDayAgo)
     } else {
       query = query.gte('detected_at', filterCutoff(time))
@@ -73,9 +81,17 @@ export default function Feed() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-white">Feed</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {posts.length} post{posts.length !== 1 ? 's' : ''}
-          </p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-sm text-slate-500">
+              {posts.length} post{posts.length !== 1 ? 's' : ''}
+            </p>
+            {lastRunAt && (
+              <>
+                <span className="text-slate-700">·</span>
+                <p className="text-xs text-slate-600">checked {timeAgo(lastRunAt)}</p>
+              </>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <BackfillButton />
@@ -143,7 +159,7 @@ function EmptyState({ tab }) {
       <div>
         <p className="text-slate-400 text-sm">{messages[tab]}</p>
         {tab === 'all' && (
-          <p className="text-slate-600 text-xs mt-1">Watcher runs every 15 minutes — posts appear here in real time</p>
+          <p className="text-slate-600 text-xs mt-1">Watcher runs every 2 minutes — posts appear here in real time</p>
         )}
       </div>
     </div>
@@ -171,6 +187,7 @@ function PostCard({ post, onClick }) {
             <span className="text-xs font-medium text-slate-400">r/{post.subreddit}</span>
             <span className="text-slate-700">·</span>
             <UrgencyDot postedAt={post.posted_at} />
+            <span className="text-xs text-slate-500">{timeAgo(post.posted_at)}</span>
             {post.author && (
               <>
                 <span className="text-slate-700">·</span>
@@ -182,7 +199,13 @@ function PostCard({ post, onClick }) {
             {post.title}
           </h3>
           {post.score_reason && (
-            <p className="text-xs text-slate-500 line-clamp-1">{post.score_reason}</p>
+            <p className="text-xs text-slate-500 line-clamp-1 mb-1.5">{post.score_reason}</p>
+          )}
+          {(post.num_comments > 0 || post.reddit_upvotes > 0) && (
+            <div className="flex items-center gap-2 text-xs text-slate-600">
+              {post.reddit_upvotes > 0 && <span>↑ {post.reddit_upvotes}</span>}
+              {post.num_comments > 0 && <span>💬 {post.num_comments}</span>}
+            </div>
           )}
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">

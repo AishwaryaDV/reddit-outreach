@@ -16,6 +16,12 @@ logger = logging.getLogger(__name__)
 REDDIT_HEADERS = {"User-Agent": "reddit-outreach-personal-tool/1.0"}
 REDDIT_SEARCH_URL = "https://www.reddit.com/search.json"
 
+_last_run_at: str | None = None
+
+
+def get_last_run_at() -> str | None:
+    return _last_run_at
+
 
 async def fetch_posts(term: str, time_filter: str = "hour") -> list[dict]:
     params = {"q": term, "sort": "new", "t": time_filter, "limit": 50}
@@ -277,6 +283,8 @@ async def run_watcher(time_filter: str = "hour"):
         if i < len(active_terms) - 1:
             await asyncio.sleep(2)
 
+    global _last_run_at
+    _last_run_at = datetime.now(tz=timezone.utc).isoformat()
     logger.info("Watcher run complete")
 
 

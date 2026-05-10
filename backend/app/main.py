@@ -10,7 +10,7 @@ from app.config import (
     WATCHER_INTERVAL_MINUTES, GMAIL_USER, GMAIL_APP_PASSWORD, NOTIFY_EMAILS,
     APPROVAL_WINDOW_MIN, DAILY_DM_CAP, PORTFOLIO_URL, POST_RETENTION_DAYS, DRY_RUN,
 )
-from app.watcher import run_watcher, run_cleanup
+from app.watcher import run_watcher, run_cleanup, get_last_run_at
 from app.sender import process_auto_sends, send_dm
 from app.database import get_client
 
@@ -56,6 +56,7 @@ def status():
         "scorer": "claude-agent-sdk",
         "gmail_configured": bool(GMAIL_USER and GMAIL_APP_PASSWORD and NOTIFY_EMAILS),
         "watcher_interval_minutes": WATCHER_INTERVAL_MINUTES,
+        "last_run_at": get_last_run_at(),
     }
 
 
