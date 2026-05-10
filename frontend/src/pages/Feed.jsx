@@ -187,7 +187,6 @@ function PostCard({ post, onClick }) {
             <span className="text-xs font-medium text-slate-400">r/{post.subreddit}</span>
             <span className="text-slate-700">·</span>
             <UrgencyDot postedAt={post.posted_at} />
-            <span className="text-xs text-slate-500">{timeAgo(post.posted_at)}</span>
             {post.author && (
               <>
                 <span className="text-slate-700">·</span>

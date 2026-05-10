@@ -83,14 +83,15 @@ _ONSITE_PHRASES = [
 
 # At least one of these must appear in the title — kills random posts Reddit's
 # fuzzy search returns that mention hiring terms only in passing in the body.
+# Keep specific: generic phrases like "looking for", "need a", "node", "react",
+# "website" match too many non-hiring posts (pet shops, advice threads, etc.)
 _TITLE_SIGNALS = [
     "hire", "hiring", "hired",
-    "looking for", "need a", "need an", "need someone",
-    "seeking", "wanted", "want a", "want an",
     "developer", "engineer", "programmer", "coder",
-    "freelan", "web dev", "fullstack", "full stack", "full-stack",
-    "react", "node", "frontend", "front-end", "backend", "back-end",
-    "mvp", "web app", "website",
+    "freelan",
+    "web dev", "fullstack", "full stack", "full-stack",
+    "frontend", "front-end", "backend", "back-end",
+    "web app", "mvp build",
 ]
 
 # Title-level hard stops — co-founder posts are not hiring posts.
