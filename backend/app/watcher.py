@@ -81,23 +81,42 @@ _ONSITE_PHRASES = [
     "in office", "in-office", "must relocate", "office-based",
 ]
 
-# At least one of these must appear in the title — kills random posts Reddit's
-# fuzzy search returns that mention hiring terms only in passing in the body.
-# Keep specific: generic phrases like "looking for", "need a", "node", "react",
-# "website" match too many non-hiring posts (pet shops, advice threads, etc.)
-_TITLE_SIGNALS = [
+# These alone are strong enough — unambiguous hiring/tech role terms.
+_TITLE_DIRECT_SIGNALS = [
     "hire", "hiring", "hired",
     "developer", "engineer", "programmer", "coder",
     "freelan",
     "web dev", "fullstack", "full stack", "full-stack",
     "frontend", "front-end", "backend", "back-end",
-    "web app", "mvp build",
+    "web app",
+]
+
+# These intent phrases are too broad alone ("looking for a pet") but valid when
+# paired with a tech term in the same title ("looking for a react developer").
+_TITLE_INTENT_PHRASES = [
+    "looking for", "need a", "need an", "need someone",
+    "seeking", "wanted", "want a", "want an",
+]
+
+_TITLE_TECH_TERMS = [
+    "developer", "engineer", "programmer", "coder", "dev",
+    "web", "app", "build", "fullstack", "react", "node",
+    "frontend", "backend", "mvp", "website",
 ]
 
 # Title-level hard stops — co-founder posts are not hiring posts.
 _TITLE_BLOCKLIST = [
     "co-founder", "cofounder", "co founder",
 ]
+
+
+def _title_has_signal(title_lower: str) -> bool:
+    if any(s in title_lower for s in _TITLE_DIRECT_SIGNALS):
+        return True
+    # Intent phrase + tech term must both appear
+    if any(p in title_lower for p in _TITLE_INTENT_PHRASES):
+        return any(t in title_lower for t in _TITLE_TECH_TERMS)
+    return False
 
 
 def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = "") -> bool:
@@ -107,10 +126,9 @@ def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = ""
     subreddit_lower = subreddit.lower()
     author_lower = author.lower()
 
-    # Title must contain at least one hiring-related signal word.
-    # Reddit's fuzzy search returns posts where terms appear anywhere in the body,
-    # so random posts (horror stories, advice threads, etc.) slip through without this.
-    if not any(signal in title_lower for signal in _TITLE_SIGNALS):
+    # Title must have a hiring signal — Reddit's fuzzy search returns posts where
+    # terms appear anywhere in the body, so random posts slip through without this.
+    if not _title_has_signal(title_lower):
         return True
 
     # Co-founder posts are equity arrangements, not dev hires
