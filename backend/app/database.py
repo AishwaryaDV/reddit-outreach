@@ -52,6 +52,18 @@ def get_recent_drafts(limit: int = 5) -> list[str]:
     return [row["draft"] for row in result.data if row.get("draft")]
 
 
+def get_setting(key: str, default: str = "") -> str:
+    try:
+        result = get_client().table("app_settings").select("value").eq("key", key).single().execute()
+        return result.data["value"] if result.data else default
+    except Exception:
+        return default
+
+
+def set_setting(key: str, value: str):
+    get_client().table("app_settings").upsert({"key": key, "value": value}).execute()
+
+
 def get_search_terms() -> list[str]:
     try:
         result = (

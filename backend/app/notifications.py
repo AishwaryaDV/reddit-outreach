@@ -4,6 +4,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from app.config import GMAIL_USER, GMAIL_APP_PASSWORD, NOTIFY_EMAILS
+from app.database import get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +12,10 @@ logger = logging.getLogger(__name__)
 def send_notification(post: dict, score: int, reason: str, draft: str):
     if not GMAIL_USER or not GMAIL_APP_PASSWORD or not NOTIFY_EMAILS:
         logger.debug("Email notifications not configured — skipping")
+        return
+
+    if get_setting("notifications_enabled", "true") != "true":
+        logger.debug("Email notifications paused — skipping")
         return
 
     subreddit = post.get("subreddit", "unknown")

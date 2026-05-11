@@ -8,9 +8,71 @@ export default function Settings() {
         <h1 className="text-xl font-semibold text-white">Settings</h1>
         <p className="text-sm text-slate-500 mt-0.5">Configure the tool without touching code</p>
       </div>
+      <NotificationsSection />
       <SearchTermsSection />
       <ConfigSection />
     </div>
+  )
+}
+
+function NotificationsSection() {
+  const [enabled, setEnabled] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [toggling, setToggling] = useState(false)
+
+  useEffect(() => {
+    fetch('http://localhost:8000/notifications/status')
+      .then((r) => r.json())
+      .then((d) => { setEnabled(d.enabled); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  async function handleToggle() {
+    if (toggling) return
+    setToggling(true)
+    try {
+      const res = await fetch('http://localhost:8000/notifications/toggle', { method: 'POST' })
+      const data = await res.json()
+      setEnabled(data.enabled)
+    } catch {
+      // backend unreachable
+    }
+    setToggling(false)
+  }
+
+  return (
+    <section>
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold text-white">Email Alerts</h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Pause alerts when you don't want to be notified — setting persists across restarts
+        </p>
+      </div>
+
+      <div className="bg-white/3 border border-white/8 rounded-xl px-4 py-3 flex items-center justify-between">
+        <div>
+          <p className="text-sm text-slate-300">
+            {loading ? '—' : enabled ? 'Alerts enabled' : 'Alerts paused'}
+          </p>
+          <p className="text-xs text-slate-600 mt-0.5">
+            {enabled
+              ? 'You\'ll get an email for every new post that scores ≥ 3'
+              : 'No emails will be sent until you re-enable'}
+          </p>
+        </div>
+        <button
+          onClick={handleToggle}
+          disabled={loading || toggling}
+          className={`w-11 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-40 ${
+            enabled ? 'bg-emerald-500' : 'bg-white/10'
+          }`}
+        >
+          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+            enabled ? 'left-5' : 'left-0.5'
+          }`} />
+        </button>
+      </div>
+    </section>
   )
 }
 

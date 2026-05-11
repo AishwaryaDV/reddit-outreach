@@ -12,7 +12,7 @@ from app.config import (
 )
 from app.watcher import run_watcher, run_cleanup, get_last_run_at
 from app.sender import process_auto_sends, send_dm
-from app.database import get_client
+from app.database import get_client, get_setting, set_setting
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,6 +72,20 @@ def get_config():
         "post_retention_days": POST_RETENTION_DAYS,
         "gmail_configured": bool(GMAIL_USER and GMAIL_APP_PASSWORD and NOTIFY_EMAILS),
     }
+
+
+@app.get("/notifications/status")
+def notifications_status():
+    enabled = get_setting("notifications_enabled", "true") == "true"
+    return {"enabled": enabled}
+
+
+@app.post("/notifications/toggle")
+def notifications_toggle():
+    current = get_setting("notifications_enabled", "true")
+    new_value = "false" if current == "true" else "true"
+    set_setting("notifications_enabled", new_value)
+    return {"enabled": new_value == "true"}
 
 
 @app.post("/messages/{message_id}/send")
