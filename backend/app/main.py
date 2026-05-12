@@ -10,7 +10,7 @@ from app.config import (
     WATCHER_INTERVAL_MINUTES, GMAIL_USER, GMAIL_APP_PASSWORD, NOTIFY_EMAILS,
     APPROVAL_WINDOW_MIN, DAILY_DM_CAP, PORTFOLIO_URL, POST_RETENTION_DAYS, DRY_RUN,
 )
-from app.watcher import run_watcher, run_cleanup, get_last_run_at
+from app.watcher import run_watcher, run_cleanup, get_last_run_at, search_term
 from app.sender import process_auto_sends, send_dm
 from app.database import get_client, get_setting, set_setting
 
@@ -110,6 +110,14 @@ async def manual_send(message_id: str):
 
     outcome = send_dm(row["id"], row["post_id"], author, body)
     return outcome
+
+
+@app.get("/search/reddit")
+async def search_reddit(q: str):
+    if not q or not q.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    count = await search_term(q.strip())
+    return {"status": "done", "term": q.strip(), "new_posts": count}
 
 
 @app.get("/watcher/run")

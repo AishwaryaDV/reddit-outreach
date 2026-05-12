@@ -286,6 +286,15 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
 
     if new_count:
         logger.info("Term '%s' — %d new post(s) saved", term, new_count)
+    return new_count
+
+
+async def search_term(term: str) -> int:
+    recent_drafts = get_recent_drafts(limit=5)
+    seen: set = set()
+    count = await process_term(term, recent_drafts, "day", seen)
+    logger.info("Live search '%s' — %d new post(s) saved", term, count or 0)
+    return count or 0
 
 
 async def run_watcher(time_filter: str = "hour"):
