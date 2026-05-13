@@ -9,7 +9,7 @@ const nav = [
 
 export default function Layout({ children }) {
   return (
-    <div className="min-h-screen flex flex-col bg-[#0f1117]">
+    <div className="min-h-screen flex flex-col bg-[#0a0a0a]">
       <header className="border-b border-white/8 px-6 py-4 flex items-center gap-8">
         <span className="text-white font-semibold tracking-tight">
           Reddit Outreach

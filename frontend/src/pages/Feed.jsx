@@ -284,7 +284,7 @@ export default function Feed() {
       ) : (
         <>
           {/* Dense table */}
-          <div style={{ border: '1px solid #1f1f1f', borderRadius: 12, background: '#0e0e0e', overflow: 'hidden' }}>
+          <div style={{ borderRadius: 12, background: '#0e0e0e', overflow: 'hidden' }}>
             <ColumnHeaders />
             {posts.map((post, i) => (
               <DenseRow
@@ -361,6 +361,7 @@ function DenseRow({ post, highlight, isConfirming, onDM, onDeleteRequest, onDele
           {post.title}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <AuthorIcon />
           <span style={{ fontSize: 11, color: '#7a7a7a' }}>u/{post.author}</span>
           {post.score_reason && (
             <>
@@ -378,11 +379,9 @@ function DenseRow({ post, highlight, isConfirming, onDM, onDeleteRequest, onDele
 
       <SubBadge sub={post.subreddit} />
 
-      <Engagement upvotes={post.reddit_upvotes} comments={post.num_comments} postId={post.id} />
+      <Engagement upvotes={post.reddit_upvotes} comments={post.num_comments} />
 
-      <div style={{ fontSize: 12, color: '#9a9a9a', fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>
-        {timeAgo(post.posted_at)}
-      </div>
+      <PostedCell postedAt={post.posted_at} />
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
@@ -408,16 +407,21 @@ function DenseRow({ post, highlight, isConfirming, onDM, onDeleteRequest, onDele
             <button onClick={onDM} style={{
               padding: '5px 10px', background: ACCENT,
               color: '#0a0a0a', border: 'none',
-              borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+              borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
             }}>
-              DM
+              Draft reply
             </button>
             <button onClick={onDeleteRequest} style={{
               padding: '5px 8px', background: '#1a1a1a',
               color: '#7a7a7a', border: '1px solid #262626',
-              borderRadius: 6, fontSize: 13, cursor: 'pointer', lineHeight: 1,
+              borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              🗑
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v6M14 11v6" />
+                <path d="M9 6V4h6v2" />
+              </svg>
             </button>
           </>
         )}
@@ -468,28 +472,34 @@ function SubBadge({ sub }) {
   )
 }
 
-function Engagement({ upvotes, comments, postId }) {
-  const seed = (postId || '').replace(/-/g, '')
-  const bars = Array.from({ length: 9 }, (_, i) => {
-    const c = seed.charCodeAt(i % seed.length) || 50
-    return 3 + (c % 7)
-  })
-
+function Engagement({ upvotes, comments }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 14 }}>
-        {bars.map((b, i) => (
-          <div key={i} style={{
-            width: 3, height: b * 1.5,
-            background: i === bars.length - 1 ? '#22d3a8' : '#3a3a3a',
-            borderRadius: 1,
-          }} />
-        ))}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11, fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>
-        <span style={{ color: '#e5e5e5' }}>↑ {upvotes ?? 0}</span>
-        <span style={{ color: '#7a7a7a' }}>💬 {comments ?? 0}</span>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11, fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>
+      <span style={{ color: '#e5e5e5' }}>↑ {upvotes ?? 0}</span>
+      <span style={{ color: '#7a7a7a' }}>💬 {comments ?? 0}</span>
+    </div>
+  )
+}
+
+function PostedCell({ postedAt }) {
+  const mins = (Date.now() - new Date(postedAt).getTime()) / 60_000
+  const dotColor = mins < 30 ? '#22d3a8' : mins < 90 ? '#fbbf24' : '#ff5d6c'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <div style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, flexShrink: 0, boxShadow: `0 0 0 2px ${dotColor}30` }} />
+      <span style={{ fontSize: 12, color: '#9a9a9a', fontFamily: 'ui-monospace, SF Mono, Menlo, monospace', whiteSpace: 'nowrap' }}>
+        {timeAgo(postedAt)}
+      </span>
+    </div>
+  )
+}
+
+function AuthorIcon() {
+  return (
+    <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#262626', border: '1px solid #3a3a3a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <svg width="9" height="9" viewBox="0 0 24 24" fill="#7a7a7a">
+        <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
+      </svg>
     </div>
   )
 }
