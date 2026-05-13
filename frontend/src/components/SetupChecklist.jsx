@@ -2,16 +2,10 @@ import { useEffect, useState } from 'react'
 
 const ITEMS = [
   {
-    key: 'gmail',
-    label: 'Gmail notifications',
-    detail: 'Google Account → Security → 2FA → App Passwords',
-    check: (s) => s.gmail_configured,
-  },
-  {
     key: 'reddit_karma',
     label: 'Reddit app registration',
     detail: 'Build karma to ~50+ on r/reactjs, r/webdev — needed for Phase 4 sending',
-    check: () => false, // manual — always shown until dismissed
+    check: () => false,
   },
   {
     key: 'oracle',

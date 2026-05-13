@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { timeAgo } from '../lib/time'
@@ -18,6 +18,7 @@ const STATUS_TABS = [
   { label: 'Drafts', value: 'drafts' },
   { label: 'Approved', value: 'approved' },
   { label: 'Disapproved', value: 'disapproved' },
+  { label: 'Search', value: 'search' },
 ]
 
 function filterCutoff(value) {
@@ -34,6 +35,7 @@ export default function Feed() {
   const [lastRunAt, setLastRunAt] = useState(null)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  const [sortOrder, setSortOrder] = useState('newest')
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
   const [liveQuery, setLiveQuery] = useState('')
@@ -48,14 +50,14 @@ export default function Feed() {
       .catch(() => {})
   }, [])
 
-  async function fetchPosts(time, tab, searchQuery, currentPage) {
+  async function fetchPosts(time, tab, searchQuery, currentPage, sort) {
     setLoading(true)
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
     let query = supabase
       .from('posts')
       .select('*', { count: 'exact' })
-      .order('posted_at', { ascending: false })
+      .order('posted_at', { ascending: sort === 'oldest' })
 
     if (tab === 'drafts') {
       query = query.eq('status', 'drafted').lt('detected_at', oneDayAgo)
@@ -79,11 +81,11 @@ export default function Feed() {
     setLoading(false)
   }
 
-  // Reset page when filters or search change
-  useEffect(() => { setPage(0) }, [timeFilter, statusTab, search])
+  useEffect(() => { setPage(0) }, [timeFilter, statusTab, search, sortOrder])
 
   useEffect(() => {
-    fetchPosts(timeFilter, statusTab, search, page)
+    if (statusTab === 'search') return
+    fetchPosts(timeFilter, statusTab, search, page, sortOrder)
 
     const channel = supabase
       .channel('posts-feed')
@@ -96,7 +98,7 @@ export default function Feed() {
       .subscribe()
 
     return () => supabase.removeChannel(channel)
-  }, [timeFilter, statusTab, search, page])
+  }, [timeFilter, statusTab, search, page, sortOrder])
 
   function handleDismiss(postId) {
     supabase.from('posts').update({ status: 'cancelled' }).eq('id', postId)
@@ -113,8 +115,6 @@ export default function Feed() {
       const res = await fetch(`http://localhost:8000/search/reddit?q=${encodeURIComponent(liveQuery.trim())}`)
       const data = await res.json()
       setLiveResult(data)
-      await fetchPosts(timeFilter, statusTab, search, 0)
-      setPage(0)
     } catch {
       setLiveResult({ error: true })
     }
@@ -122,6 +122,8 @@ export default function Feed() {
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
+  const fromRow = total === 0 ? 0 : page * PAGE_SIZE + 1
+  const toRow = Math.min((page + 1) * PAGE_SIZE, total)
 
   return (
     <div>
@@ -130,89 +132,79 @@ export default function Feed() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-white">Feed</h1>
-          <div className="flex items-center gap-2 mt-0.5">
-            <p className="text-sm text-slate-500">
-              {total} post{total !== 1 ? 's' : ''}
-            </p>
-            {lastRunAt && (
-              <>
-                <span className="text-slate-700">·</span>
-                <p className="text-xs text-slate-600">checked {timeAgo(lastRunAt)}</p>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <BackfillButton />
-          <select
-            value={timeFilter}
-            onChange={(e) => setTimeFilter(e.target.value)}
-            className="bg-white/5 border border-white/10 text-slate-300 text-sm rounded-lg px-3 py-2 outline-none cursor-pointer hover:bg-white/8"
-          >
-            {TIME_FILTERS.map((f) => (
-              <option key={f.value} value={f.value}>{f.label}</option>
-            ))}
-          </select>
+          {lastRunAt && (
+            <p className="text-xs text-slate-600 mt-0.5">checked {timeAgo(lastRunAt)}</p>
+          )}
         </div>
       </div>
 
-      {/* Search bars */}
-      <div className="flex gap-2 mb-4">
-        <input
-          type="text"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') setSearch(searchInput) }}
-          placeholder="Filter by title, subreddit, author…"
-          className="flex-1 bg-white/5 border border-white/10 text-slate-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-white/20 placeholder-slate-600"
-        />
-        {search && (
-          <button
-            onClick={() => { setSearch(''); setSearchInput('') }}
-            className="text-xs px-3 py-2 rounded-lg border border-white/10 text-slate-500 hover:text-white bg-white/5 transition-colors"
-          >
-            Clear
-          </button>
-        )}
-        {!search && (
-          <button
-            onClick={() => setSearch(searchInput)}
-            className="text-xs px-3 py-2 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 hover:text-slate-300 transition-colors"
-          >
-            Search feed
-          </button>
-        )}
-      </div>
-
-      {/* Live Reddit search */}
-      <form onSubmit={handleLiveSearch} className="flex gap-2 mb-5">
-        <input
-          type="text"
-          value={liveQuery}
-          onChange={(e) => { setLiveQuery(e.target.value); setLiveResult(null) }}
-          placeholder="Search Reddit live (e.g. hiring react developer)…"
-          className="flex-1 bg-white/5 border border-white/10 text-slate-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-white/20 placeholder-slate-600"
-        />
-        <button
-          type="submit"
-          disabled={liveSearching || !liveQuery.trim()}
-          className="text-xs px-3 py-2 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 hover:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-        >
-          {liveSearching ? 'Searching…' : 'Search Reddit'}
-        </button>
-        {liveResult && (
-          <span className={`text-xs self-center ${liveResult.error ? 'text-red-400' : 'text-emerald-400'}`}>
-            {liveResult.error ? 'Failed' : liveResult.new_posts > 0 ? `+${liveResult.new_posts} new` : 'No new posts'}
+      {/* Controls row */}
+      <div className="flex items-center gap-2 mb-4">
+        {/* Search — small, left-anchored */}
+        <div className="relative w-44 mr-auto">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
           </span>
-        )}
-      </form>
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') setSearch(searchInput) }}
+            placeholder="Filter feed…"
+            className="w-full bg-white/5 border border-white/10 text-slate-300 text-xs rounded-lg pl-8 pr-7 py-2 outline-none focus:border-white/20 placeholder-slate-600"
+          />
+          {searchInput && (
+            <button
+              onClick={() => { setSearch(''); setSearchInput('') }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-300 transition-colors"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
 
-      <div className="flex gap-1 border-b border-white/8 mb-5">
+        {/* Sort dropdown */}
+        <IconSelect
+          icon={
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" />
+            </svg>
+          }
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+          options={[
+            { value: 'newest', label: 'Newest' },
+            { value: 'oldest', label: 'Oldest' },
+          ]}
+        />
+
+        {/* Time dropdown */}
+        <IconSelect
+          icon={
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          }
+          value={timeFilter}
+          onChange={(e) => setTimeFilter(e.target.value)}
+          options={TIME_FILTERS}
+        />
+
+        {/* Backfill — last */}
+        <BackfillButton />
+      </div>
+
+      {/* Tabs — equally spaced */}
+      <div className="flex border-b border-white/8 mb-5">
         {STATUS_TABS.map((tab) => (
           <button
             key={tab.value}
             onClick={() => setStatusTab(tab.value)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`flex-1 py-2 text-sm font-medium transition-colors border-b-2 -mb-px text-center ${
               statusTab === tab.value
                 ? 'text-white border-white'
                 : 'text-slate-500 border-transparent hover:text-slate-300'
@@ -223,7 +215,39 @@ export default function Feed() {
         ))}
       </div>
 
-      {loading ? (
+      {/* Search tab */}
+      {statusTab === 'search' ? (
+        <div className="max-w-xl">
+          <p className="text-xs text-slate-500 mb-3">
+            Search Reddit in real time — new matching posts are saved to your feed.
+          </p>
+          <form onSubmit={handleLiveSearch} className="flex gap-2">
+            <input
+              type="text"
+              value={liveQuery}
+              onChange={(e) => { setLiveQuery(e.target.value); setLiveResult(null) }}
+              placeholder="e.g. hiring react developer…"
+              className="flex-1 bg-white/5 border border-white/10 text-slate-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-white/20 placeholder-slate-600"
+            />
+            <button
+              type="submit"
+              disabled={liveSearching || !liveQuery.trim()}
+              className="text-xs px-4 py-2 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 hover:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+            >
+              {liveSearching ? 'Searching…' : 'Search Reddit'}
+            </button>
+          </form>
+          {liveResult && (
+            <p className={`text-xs mt-3 ${liveResult.error ? 'text-red-400' : 'text-emerald-400'}`}>
+              {liveResult.error
+                ? 'Search failed — is the backend running?'
+                : liveResult.new_posts > 0
+                  ? `+${liveResult.new_posts} new post${liveResult.new_posts !== 1 ? 's' : ''} added to feed`
+                  : 'No new posts found'}
+            </p>
+          )}
+        </div>
+      ) : loading ? (
         <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
           Loading posts...
         </div>
@@ -242,27 +266,15 @@ export default function Feed() {
             ))}
           </div>
 
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6">
-              <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-                className="text-xs px-4 py-2 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                ← Previous
-              </button>
-              <span className="text-xs text-slate-600">
-                Page {page + 1} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
-                className="text-xs px-4 py-2 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                Next →
-              </button>
-            </div>
-          )}
+          {/* Bottom bar */}
+          <div className="flex items-center justify-between mt-6">
+            <span className="text-xs text-slate-600">
+              {fromRow}–{toRow} of {total} post{total !== 1 ? 's' : ''}
+            </span>
+            {totalPages > 1 && (
+              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+            )}
+          </div>
         </>
       )}
     </div>
@@ -367,6 +379,70 @@ function PostCard({ post, onClick, onDismiss }) {
   )
 }
 
+function getPageWindow(current, total) {
+  const size = Math.min(5, total)
+  let start = Math.max(0, current - Math.floor(size / 2))
+  if (start + size > total) start = total - size
+  return Array.from({ length: size }, (_, i) => start + i)
+}
+
+function Pagination({ page, totalPages, onPageChange }) {
+  const pages = getPageWindow(page, totalPages)
+  const btnBase = 'w-8 h-8 flex items-center justify-center rounded-lg text-xs font-medium transition-colors'
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => onPageChange((p) => Math.max(0, p - 1))}
+        disabled={page === 0}
+        className={`${btnBase} border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 disabled:opacity-30 disabled:cursor-not-allowed`}
+      >
+        ←
+      </button>
+      {pages.map((p) => (
+        <button
+          key={p}
+          onClick={() => onPageChange(p)}
+          className={`${btnBase} ${
+            p === page
+              ? 'bg-white/15 text-white border border-white/20'
+              : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+          }`}
+        >
+          {p + 1}
+        </button>
+      ))}
+      <button
+        onClick={() => onPageChange((p) => Math.min(totalPages - 1, p + 1))}
+        disabled={page >= totalPages - 1}
+        className={`${btnBase} border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 disabled:opacity-30 disabled:cursor-not-allowed`}
+      >
+        →
+      </button>
+    </div>
+  )
+}
+
+function IconSelect({ icon, value, onChange, options }) {
+  return (
+    <div className="relative flex items-center">
+      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+        {icon}
+      </span>
+      <select
+        value={value}
+        onChange={onChange}
+        className="appearance-none bg-white/5 border border-white/10 text-slate-300 text-xs rounded-lg pl-7 pr-6 py-2 outline-none cursor-pointer hover:bg-white/8 transition-colors"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none text-xs">▾</span>
+    </div>
+  )
+}
+
 function BackfillButton() {
   const [state, setState] = useState('idle')
 
@@ -380,22 +456,24 @@ function BackfillButton() {
     setTimeout(() => setState('idle'), 3000)
   }
 
-  const label =
-    state === 'loading' ? 'Triggering…' :
-    state === 'done'    ? 'Triggered ✓' :
-                          'Backfill 24h'
+  const icon = state === 'loading'
+    ? <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+    : state === 'done'
+    ? <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+    : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
 
   return (
     <div className="relative group">
       <button
         onClick={handleClick}
         disabled={state !== 'idle'}
-        className="text-xs px-3 py-2 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 hover:text-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 hover:text-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {label}
+        {icon}
+        <span>{state === 'done' ? 'Done' : 'Backfill'}</span>
       </button>
-      <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-xl">
-        Fetches all posts from the last 24 hours. Use this after restarting the server to fill any gaps the watcher may have missed.
+      <div className="absolute right-0 top-full mt-2 w-60 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-xl">
+        Pulls all Reddit posts from the last 24h across your search terms — useful after a server restart to catch up on missed posts.
       </div>
     </div>
   )
