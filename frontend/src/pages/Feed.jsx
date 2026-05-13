@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { timeAgo } from '../lib/time'
-import ScoreBadge from '../components/ScoreBadge'
-import UrgencyDot from '../components/UrgencyDot'
 import SetupChecklist from '../components/SetupChecklist'
 
 const PAGE_SIZE = 20
+const ACCENT = '#ff4500'
 
 const TIME_FILTERS = [
   { label: 'Past hour', value: 'hour' },
@@ -20,6 +19,27 @@ const STATUS_TABS = [
   { label: 'Disapproved', value: 'disapproved' },
   { label: 'Search', value: 'search' },
 ]
+
+const SUB_COLORS = {
+  saas: '#7c5cff',
+  reactjs: '#22d3a8',
+  webdev: '#ff8a3d',
+  startups: '#f5cc4b',
+  entrepreneur: '#ff5d8f',
+  growmybusiness: '#5cc2ff',
+  marketing: '#c084fc',
+  sideproject: '#34d399',
+  entrepreneurridealone: '#fbbf24',
+}
+
+function subColor(sub) {
+  const key = (sub || '').toLowerCase()
+  if (SUB_COLORS[key]) return SUB_COLORS[key]
+  let h = 0
+  for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) | 0
+  const colors = Object.values(SUB_COLORS)
+  return colors[Math.abs(h) % colors.length]
+}
 
 function filterCutoff(value) {
   const now = new Date()
@@ -41,6 +61,7 @@ export default function Feed() {
   const [liveQuery, setLiveQuery] = useState('')
   const [liveSearching, setLiveSearching] = useState(false)
   const [liveResult, setLiveResult] = useState(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -100,10 +121,12 @@ export default function Feed() {
     return () => supabase.removeChannel(channel)
   }, [timeFilter, statusTab, search, page, sortOrder])
 
-  function handleDismiss(postId) {
-    supabase.from('posts').update({ status: 'cancelled' }).eq('id', postId)
+  async function handleDelete(postId) {
+    await supabase.from('messages').delete().eq('post_id', postId)
+    await supabase.from('posts').delete().eq('id', postId)
     setPosts((prev) => prev.filter((p) => p.id !== postId))
     setTotal((prev) => Math.max(0, prev - 1))
+    setDeleteConfirm(null)
   }
 
   async function handleLiveSearch(e) {
@@ -129,20 +152,23 @@ export default function Feed() {
     <div>
       <SetupChecklist />
 
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-xl font-semibold text-white">Feed</h1>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 16 }}>
+        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 600, letterSpacing: -0.5, color: '#f5f5f5' }}>
+          Feed
+        </h1>
+        <div style={{ fontSize: 12.5, color: '#7a7a7a' }}>
+          <span style={{ color: '#e5e5e5', fontWeight: 500 }}>{total}</span> posts detected
           {lastRunAt && (
-            <p className="text-xs text-slate-600 mt-0.5">checked {timeAgo(lastRunAt)}</p>
+            <> · checked <span style={{ color: '#9a9a9a' }}>{timeAgo(lastRunAt)}</span></>
           )}
         </div>
       </div>
 
       {/* Controls row */}
       <div className="flex items-center gap-2 mb-4">
-        {/* Search — small, left-anchored */}
         <div className="relative w-44 mr-auto">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#5a5a5a' }}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
@@ -153,12 +179,16 @@ export default function Feed() {
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') setSearch(searchInput) }}
             placeholder="Filter feed…"
-            className="w-full bg-white/5 border border-white/10 text-slate-300 text-xs rounded-lg pl-8 pr-7 py-2 outline-none focus:border-white/20 placeholder-slate-600"
+            style={{
+              width: '100%', background: '#1a1a1a', border: '1px solid #262626',
+              color: '#cfcfcf', fontSize: 12, borderRadius: 8,
+              padding: '7px 28px 7px 32px', outline: 'none', boxSizing: 'border-box',
+            }}
           />
           {searchInput && (
             <button
               onClick={() => { setSearch(''); setSearchInput('') }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-300 transition-colors"
+              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#5a5a5a', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
             >
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -167,48 +197,38 @@ export default function Feed() {
           )}
         </div>
 
-        {/* Sort dropdown */}
         <IconSelect
-          icon={
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" />
-            </svg>
-          }
+          icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" /></svg>}
           value={sortOrder}
           onChange={(e) => setSortOrder(e.target.value)}
-          options={[
-            { value: 'newest', label: 'Newest' },
-            { value: 'oldest', label: 'Oldest' },
-          ]}
+          options={[{ value: 'newest', label: 'Newest' }, { value: 'oldest', label: 'Oldest' }]}
         />
 
-        {/* Time dropdown */}
         <IconSelect
-          icon={
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
+          icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
           value={timeFilter}
           onChange={(e) => setTimeFilter(e.target.value)}
           options={TIME_FILTERS}
         />
 
-        {/* Backfill — last */}
         <BackfillButton />
       </div>
 
-      {/* Tabs — equally spaced */}
-      <div className="flex border-b border-white/8 mb-5">
+      {/* Tabs */}
+      <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #1f1f1f', marginBottom: 16 }}>
         {STATUS_TABS.map((tab) => (
           <button
             key={tab.value}
             onClick={() => setStatusTab(tab.value)}
-            className={`flex-1 py-2 text-sm font-medium transition-colors border-b-2 -mb-px text-center ${
-              statusTab === tab.value
-                ? 'text-white border-white'
-                : 'text-slate-500 border-transparent hover:text-slate-300'
-            }`}
+            style={{
+              flex: 1, padding: '10px 14px', fontSize: 12.5,
+              fontWeight: statusTab === tab.value ? 600 : 500,
+              color: statusTab === tab.value ? '#fff' : '#7a7a7a',
+              borderBottom: statusTab === tab.value ? `2px solid ${ACCENT}` : '2px solid transparent',
+              marginBottom: -1, background: 'none', border: 'none',
+              borderBottom: statusTab === tab.value ? `2px solid ${ACCENT}` : '2px solid transparent',
+              cursor: 'pointer', textAlign: 'center', transition: 'color 0.15s',
+            }}
           >
             {tab.label}
           </button>
@@ -217,28 +237,36 @@ export default function Feed() {
 
       {/* Search tab */}
       {statusTab === 'search' ? (
-        <div className="max-w-xl">
-          <p className="text-xs text-slate-500 mb-3">
+        <div style={{ maxWidth: 520 }}>
+          <p style={{ fontSize: 12, color: '#7a7a7a', marginBottom: 12, marginTop: 0 }}>
             Search Reddit in real time — new matching posts are saved to your feed.
           </p>
-          <form onSubmit={handleLiveSearch} className="flex gap-2">
+          <form onSubmit={handleLiveSearch} style={{ display: 'flex', gap: 8 }}>
             <input
               type="text"
               value={liveQuery}
               onChange={(e) => { setLiveQuery(e.target.value); setLiveResult(null) }}
               placeholder="e.g. hiring react developer…"
-              className="flex-1 bg-white/5 border border-white/10 text-slate-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-white/20 placeholder-slate-600"
+              style={{
+                flex: 1, background: '#1a1a1a', border: '1px solid #262626',
+                color: '#cfcfcf', fontSize: 13, borderRadius: 8,
+                padding: '8px 12px', outline: 'none',
+              }}
             />
             <button
               type="submit"
               disabled={liveSearching || !liveQuery.trim()}
-              className="text-xs px-4 py-2 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 hover:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              style={{
+                padding: '8px 16px', background: ACCENT, color: '#0a0a0a',
+                border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                cursor: 'pointer', opacity: (liveSearching || !liveQuery.trim()) ? 0.45 : 1,
+              }}
             >
               {liveSearching ? 'Searching…' : 'Search Reddit'}
             </button>
           </form>
           {liveResult && (
-            <p className={`text-xs mt-3 ${liveResult.error ? 'text-red-400' : 'text-emerald-400'}`}>
+            <p style={{ fontSize: 12, marginTop: 12, color: liveResult.error ? '#ff5d6c' : '#22d3a8' }}>
               {liveResult.error
                 ? 'Search failed — is the backend running?'
                 : liveResult.new_posts > 0
@@ -248,28 +276,34 @@ export default function Feed() {
           )}
         </div>
       ) : loading ? (
-        <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: '#5a5a5a', fontSize: 14 }}>
           Loading posts...
         </div>
       ) : posts.length === 0 ? (
         <EmptyState tab={statusTab} hasSearch={!!search} />
       ) : (
         <>
-          <div className="flex flex-col gap-3">
-            {posts.map((post) => (
-              <PostCard
+          {/* Dense table */}
+          <div style={{ border: '1px solid #1f1f1f', borderRadius: 12, background: '#0e0e0e', overflow: 'hidden' }}>
+            <ColumnHeaders />
+            {posts.map((post, i) => (
+              <DenseRow
                 key={post.id}
                 post={post}
-                onClick={() => navigate(`/review/${post.id}`)}
-                onDismiss={() => handleDismiss(post.id)}
+                highlight={i === 0}
+                isConfirming={deleteConfirm === post.id}
+                onDM={() => navigate(`/review/${post.id}`)}
+                onDeleteRequest={() => setDeleteConfirm(post.id)}
+                onDeleteConfirm={() => handleDelete(post.id)}
+                onDeleteCancel={() => setDeleteConfirm(null)}
               />
             ))}
           </div>
 
           {/* Bottom bar */}
-          <div className="flex items-center justify-between mt-6">
-            <span className="text-xs text-slate-600">
-              {fromRow}–{toRow} of {total} post{total !== 1 ? 's' : ''}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20 }}>
+            <span style={{ fontSize: 12, color: '#5a5a5a', fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>
+              {fromRow}–{toRow} of {total} posts
             </span>
             {totalPages > 1 && (
               <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
@@ -281,13 +315,191 @@ export default function Feed() {
   )
 }
 
-function EmptyState({ tab, hasSearch }) {
-  if (hasSearch) return (
-    <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
-      <p className="text-slate-400 text-sm">No posts match your search</p>
+function ColumnHeaders() {
+  const cols = ['lead', 'post', 'subreddit', 'engagement', 'posted', '']
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '56px 1fr 140px 120px 80px 100px',
+      gap: 16, padding: '10px 16px',
+      borderBottom: '1px solid #1f1f1f',
+      background: '#0a0a0a',
+    }}>
+      {cols.map((c, i) => (
+        <div key={i} style={{ fontSize: 10, color: '#5a5a5a', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>
+          {c}
+        </div>
+      ))}
     </div>
   )
+}
 
+function DenseRow({ post, highlight, isConfirming, onDM, onDeleteRequest, onDeleteConfirm, onDeleteCancel }) {
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '56px 1fr 140px 120px 80px 100px',
+      gap: 16, padding: '14px 16px',
+      borderBottom: '1px solid #161616',
+      alignItems: 'center',
+      position: 'relative',
+      background: highlight ? `linear-gradient(90deg, ${ACCENT}0a, transparent 30%)` : 'transparent',
+    }}>
+      {highlight && (
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: ACCENT }} />
+      )}
+
+      <ScoreRing score={post.score} size={36} />
+
+      {/* Post column */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontSize: 13.5, fontWeight: 500, color: '#f5f5f5',
+          lineHeight: 1.3, marginBottom: 4,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {post.title}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, color: '#7a7a7a' }}>u/{post.author}</span>
+          {post.score_reason && (
+            <>
+              <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
+              <span style={{
+                fontSize: 11, color: '#5a5a5a',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220,
+              }}>
+                {post.score_reason}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+
+      <SubBadge sub={post.subreddit} />
+
+      <Engagement upvotes={post.reddit_upvotes} comments={post.num_comments} postId={post.id} />
+
+      <div style={{ fontSize: 12, color: '#9a9a9a', fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>
+        {timeAgo(post.posted_at)}
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+        {isConfirming ? (
+          <>
+            <button onClick={onDeleteConfirm} style={{
+              padding: '4px 8px', background: 'rgba(255,93,108,0.12)',
+              color: '#ff5d6c', border: '1px solid rgba(255,93,108,0.25)',
+              borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            }}>
+              Delete
+            </button>
+            <button onClick={onDeleteCancel} style={{
+              padding: '4px 8px', background: '#1a1a1a',
+              color: '#9a9a9a', border: '1px solid #262626',
+              borderRadius: 6, fontSize: 11, cursor: 'pointer',
+            }}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={onDM} style={{
+              padding: '5px 10px', background: ACCENT,
+              color: '#0a0a0a', border: 'none',
+              borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            }}>
+              DM
+            </button>
+            <button onClick={onDeleteRequest} style={{
+              padding: '5px 8px', background: '#1a1a1a',
+              color: '#7a7a7a', border: '1px solid #262626',
+              borderRadius: 6, fontSize: 13, cursor: 'pointer', lineHeight: 1,
+            }}>
+              🗑
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ScoreRing({ score, size = 36 }) {
+  const radius = (size - 5) / 2
+  const circumference = 2 * Math.PI * radius
+  const pct = Math.max(0, Math.min(10, score ?? 0)) / 10
+  const color = score >= 8.5 ? '#22d3a8' : score >= 7 ? '#fbbf24' : '#7a7a7a'
+
+  return (
+    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#1f1f1f" strokeWidth={2.5} />
+        <circle
+          cx={size / 2} cy={size / 2} r={radius}
+          fill="none" stroke={color} strokeWidth={2.5}
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - pct)}
+          strokeLinecap="round"
+        />
+      </svg>
+      <span style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: Math.round(size * 0.3), fontWeight: 600, color,
+        fontFamily: 'ui-monospace, SF Mono, Menlo, monospace',
+      }}>
+        {score ?? '—'}
+      </span>
+    </div>
+  )
+}
+
+function SubBadge({ sub }) {
+  const color = subColor(sub)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
+      <span style={{ fontSize: 11.5, color: '#cfcfcf', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        r/{sub}
+      </span>
+    </div>
+  )
+}
+
+function Engagement({ upvotes, comments, postId }) {
+  const seed = (postId || '').replace(/-/g, '')
+  const bars = Array.from({ length: 9 }, (_, i) => {
+    const c = seed.charCodeAt(i % seed.length) || 50
+    return 3 + (c % 7)
+  })
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 14 }}>
+        {bars.map((b, i) => (
+          <div key={i} style={{
+            width: 3, height: b * 1.5,
+            background: i === bars.length - 1 ? '#22d3a8' : '#3a3a3a',
+            borderRadius: 1,
+          }} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11, fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>
+        <span style={{ color: '#e5e5e5' }}>↑ {upvotes ?? 0}</span>
+        <span style={{ color: '#7a7a7a' }}>💬 {comments ?? 0}</span>
+      </div>
+    </div>
+  )
+}
+
+function EmptyState({ tab, hasSearch }) {
+  if (hasSearch) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 192, color: '#5a5a5a', fontSize: 14 }}>
+      No posts match your search
+    </div>
+  )
   const messages = {
     all: 'No posts in this window',
     drafts: 'No stale drafts — all posts reviewed within 24 hours',
@@ -295,86 +507,35 @@ function EmptyState({ tab, hasSearch }) {
     disapproved: 'No disapproved posts yet',
   }
   return (
-    <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
-      <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
-        <span className="text-slate-500 text-sm">○</span>
-      </div>
-      <div>
-        <p className="text-slate-400 text-sm">{messages[tab]}</p>
-        {tab === 'all' && (
-          <p className="text-slate-600 text-xs mt-1">Watcher runs every 2 minutes — posts appear here in real time</p>
-        )}
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 192, gap: 8 }}>
+      <p style={{ color: '#5a5a5a', fontSize: 14, margin: 0 }}>{messages[tab]}</p>
+      {tab === 'all' && (
+        <p style={{ color: '#3a3a3a', fontSize: 12, margin: 0 }}>Watcher runs every 2 minutes — posts appear here in real time</p>
+      )}
     </div>
   )
 }
 
-function PostCard({ post, onClick, onDismiss }) {
-  const ageMin = (Date.now() - new Date(post.posted_at).getTime()) / 60_000
-  const urgencyBorder =
-    ageMin < 30 ? 'border-emerald-500/30 hover:border-emerald-500/50' :
-    ageMin < 90 ? 'border-yellow-500/30 hover:border-yellow-500/50' :
-                  'border-red-500/20 hover:border-red-500/40'
-
-  const daysOld = Math.floor((Date.now() - new Date(post.detected_at).getTime()) / (1000 * 60 * 60 * 24))
-  const showAgeTag = (post.status === 'drafted' || post.status === 'new') && daysOld >= 1
-
-  function handleDismiss(e) {
-    e.stopPropagation()
-    onDismiss()
-  }
-
+function IconSelect({ icon, value, onChange, options }) {
   return (
-    <div
-      onClick={onClick}
-      className={`bg-white/3 border ${urgencyBorder} rounded-xl p-4 cursor-pointer hover:bg-white/5 transition-all group relative`}
-    >
-      <button
-        onClick={handleDismiss}
-        className="absolute top-3 right-3 w-6 h-6 flex items-center justify-center rounded-md text-slate-700 hover:text-red-400 hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100 text-xs"
-        title="Dismiss post"
+    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+      <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: '#5a5a5a', pointerEvents: 'none' }}>
+        {icon}
+      </span>
+      <select
+        value={value}
+        onChange={onChange}
+        style={{
+          appearance: 'none', background: '#1a1a1a', border: '1px solid #262626',
+          color: '#cfcfcf', fontSize: 12, borderRadius: 8,
+          padding: '7px 24px 7px 28px', outline: 'none', cursor: 'pointer',
+        }}
       >
-        ✕
-      </button>
-
-      <div className="flex items-start justify-between gap-4 pr-6">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <span className="text-xs font-medium text-slate-400">r/{post.subreddit}</span>
-            <span className="text-slate-700">·</span>
-            <UrgencyDot postedAt={post.posted_at} />
-            {post.author && (
-              <>
-                <span className="text-slate-700">·</span>
-                <span className="text-xs text-slate-600">u/{post.author}</span>
-              </>
-            )}
-          </div>
-          <h3 className="text-sm font-medium text-white leading-snug line-clamp-2 group-hover:text-slate-100 mb-1.5">
-            {post.title}
-          </h3>
-          {post.score_reason && (
-            <p className="text-xs text-slate-500 line-clamp-1 mb-1.5">{post.score_reason}</p>
-          )}
-          {(post.num_comments > 0 || post.reddit_upvotes > 0) && (
-            <div className="flex items-center gap-2 text-xs text-slate-600">
-              {post.reddit_upvotes > 0 && <span>↑ {post.reddit_upvotes}</span>}
-              {post.num_comments > 0 && <span>💬 {post.num_comments}</span>}
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col items-end gap-2 shrink-0">
-          <ScoreBadge score={post.score} />
-          <div className="flex items-center gap-1.5 flex-wrap justify-end">
-            {showAgeTag && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400">
-                {daysOld}d old
-              </span>
-            )}
-            <StatusPill status={post.status} />
-          </div>
-        </div>
-      </div>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#5a5a5a', pointerEvents: 'none', fontSize: 10 }}>▾</span>
     </div>
   )
 }
@@ -388,57 +549,30 @@ function getPageWindow(current, total) {
 
 function Pagination({ page, totalPages, onPageChange }) {
   const pages = getPageWindow(page, totalPages)
-  const btnBase = 'w-8 h-8 flex items-center justify-center rounded-lg text-xs font-medium transition-colors'
-
-  return (
-    <div className="flex items-center gap-1">
-      <button
-        onClick={() => onPageChange((p) => Math.max(0, p - 1))}
-        disabled={page === 0}
-        className={`${btnBase} border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 disabled:opacity-30 disabled:cursor-not-allowed`}
-      >
-        ←
-      </button>
-      {pages.map((p) => (
-        <button
-          key={p}
-          onClick={() => onPageChange(p)}
-          className={`${btnBase} ${
-            p === page
-              ? 'bg-white/15 text-white border border-white/20'
-              : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
-          }`}
-        >
-          {p + 1}
-        </button>
-      ))}
-      <button
-        onClick={() => onPageChange((p) => Math.min(totalPages - 1, p + 1))}
-        disabled={page >= totalPages - 1}
-        className={`${btnBase} border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 disabled:opacity-30 disabled:cursor-not-allowed`}
-      >
-        →
-      </button>
-    </div>
+  const btn = (label, onClick, disabled, active) => (
+    <button
+      key={label}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        borderRadius: 6, fontSize: 12, fontWeight: active ? 600 : 400, cursor: disabled ? 'not-allowed' : 'pointer',
+        background: active ? 'rgba(255,255,255,0.12)' : '#1a1a1a',
+        color: active ? '#fff' : disabled ? '#3a3a3a' : '#9a9a9a',
+        border: active ? '1px solid rgba(255,255,255,0.18)' : '1px solid #262626',
+        transition: 'all 0.1s',
+        fontFamily: 'ui-monospace, SF Mono, Menlo, monospace',
+      }}
+    >
+      {label}
+    </button>
   )
-}
 
-function IconSelect({ icon, value, onChange, options }) {
   return (
-    <div className="relative flex items-center">
-      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
-        {icon}
-      </span>
-      <select
-        value={value}
-        onChange={onChange}
-        className="appearance-none bg-white/5 border border-white/10 text-slate-300 text-xs rounded-lg pl-7 pr-6 py-2 outline-none cursor-pointer hover:bg-white/8 transition-colors"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none text-xs">▾</span>
+    <div style={{ display: 'flex', gap: 4 }}>
+      {btn('←', () => onPageChange((p) => Math.max(0, p - 1)), page === 0, false)}
+      {pages.map((p) => btn(p + 1, () => onPageChange(p), false, p === page))}
+      {btn('→', () => onPageChange((p) => Math.min(totalPages - 1, p + 1)), page >= totalPages - 1, false)}
     </div>
   )
 }
@@ -449,9 +583,7 @@ function BackfillButton() {
   async function handleClick() {
     if (state !== 'idle') return
     setState('loading')
-    try {
-      await fetch('http://localhost:8000/watcher/backfill')
-    } catch {}
+    try { await fetch('http://localhost:8000/watcher/backfill') } catch {}
     setState('done')
     setTimeout(() => setState('idle'), 3000)
   }
@@ -463,33 +595,29 @@ function BackfillButton() {
     : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
 
   return (
-    <div className="relative group">
+    <div style={{ position: 'relative' }} className="group">
       <button
         onClick={handleClick}
         disabled={state !== 'idle'}
-        className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 hover:text-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '7px 12px', background: '#1a1a1a', border: '1px solid #262626',
+          borderRadius: 8, color: '#9a9a9a', fontSize: 12, cursor: 'pointer',
+          opacity: state !== 'idle' ? 0.6 : 1, transition: 'all 0.15s',
+        }}
       >
         {icon}
         <span>{state === 'done' ? 'Done' : 'Backfill'}</span>
       </button>
-      <div className="absolute right-0 top-full mt-2 w-60 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-xl">
+      <div className="absolute right-0 top-full mt-2 w-60 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10"
+        style={{
+          background: '#141414', border: '1px solid #262626',
+          borderRadius: 8, padding: '8px 12px',
+          fontSize: 11.5, color: '#9a9a9a', lineHeight: 1.5,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+        }}>
         Pulls all Reddit posts from the last 24h across your search terms — useful after a server restart to catch up on missed posts.
       </div>
     </div>
-  )
-}
-
-function StatusPill({ status }) {
-  const styles = {
-    new:       'bg-slate-500/15 text-slate-400',
-    drafted:   'bg-blue-500/15 text-blue-400',
-    approved:  'bg-purple-500/15 text-purple-400',
-    sent:      'bg-emerald-500/15 text-emerald-400',
-    cancelled: 'bg-red-500/15 text-red-400',
-  }
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status] ?? styles.new}`}>
-      {status}
-    </span>
   )
 }
