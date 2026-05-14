@@ -469,19 +469,20 @@ function SubBadge({ sub, small }) {
 
 function StatusPill({ status }) {
   const map = {
-    new:       { bg: 'rgba(90,90,90,0.15)',  color: '#9a9a9a' },
-    drafted:   { bg: 'rgba(92,194,255,0.15)', color: '#5cc2ff' },
-    approved:  { bg: 'rgba(34,211,168,0.15)', color: '#22d3a8' },
-    sent:      { bg: 'rgba(34,211,168,0.15)', color: '#22d3a8' },
-    cancelled: { bg: 'rgba(255,93,108,0.15)', color: '#ff5d6c' },
+    new:       { bg: 'rgba(34,211,168,0.12)',  color: '#22d3a8', label: 'NEW' },
+    drafted:   { bg: 'rgba(92,194,255,0.12)',  color: '#5cc2ff', label: 'DRAFT' },
+    approved:  { bg: 'rgba(251,191,36,0.12)',  color: '#fbbf24', label: 'QUEUED' },
+    sent:      { bg: 'rgba(34,211,168,0.12)',  color: '#22d3a8', label: 'REPLIED' },
+    cancelled: { bg: 'rgba(90,90,90,0.12)',    color: '#7a7a7a', label: 'PASSED' },
   }
   const s = map[status] ?? map.new
   return (
     <span style={{
-      fontSize: 10, padding: '2px 7px', borderRadius: 999,
-      background: s.bg, color: s.color, fontWeight: 500, whiteSpace: 'nowrap',
+      fontSize: 9.5, padding: '2px 6px', borderRadius: 999,
+      background: s.bg, color: s.color, fontWeight: 700,
+      whiteSpace: 'nowrap', letterSpacing: 0.4,
     }}>
-      {status}
+      {s.label}
     </span>
   )
 }
