@@ -136,14 +136,10 @@ export default function MessageReview() {
           {/* Header strip */}
           <div style={{ padding: '12px 18px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
             <SubBadge sub={post.subreddit} />
-            {!post.subreddit?.toLowerCase().startsWith('u_') && (
-              <>
-                <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
-                <span style={{ fontSize: 11.5, color: '#9a9a9a' }}>u/{post.author}</span>
-              </>
-            )}
+            <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
+            <span style={{ fontSize: 11.5, color: '#9a9a9a' }}>u/{post.author}</span>
             <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 11, color: '#7a7a7a', fontFamily: 'ui-monospace, monospace' }}>
+            <span style={{ fontSize: 11, color: '#7a7a7a' }}>
               posted {timeAgo(post.posted_at)}
             </span>
             <a
