@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 
 const nav = [
   { to: '/', label: 'Feed' },
@@ -8,6 +8,9 @@ const nav = [
 ]
 
 export default function Layout({ children }) {
+  const { pathname } = useLocation()
+  const isReview = pathname.startsWith('/review/')
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0a0a0a]">
       <header className="border-b border-white/8 px-6 py-4 flex items-center gap-8">
@@ -33,7 +36,7 @@ export default function Layout({ children }) {
           ))}
         </nav>
       </header>
-      <main className="flex-1 px-4 py-6 max-w-6xl mx-auto w-full">
+      <main className={isReview ? 'flex-1 px-6 py-6 w-full' : 'flex-1 px-3 py-6 max-w-6xl mx-auto w-full'}>
         {children}
       </main>
     </div>

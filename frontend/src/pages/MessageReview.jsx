@@ -43,13 +43,11 @@ export default function MessageReview() {
 
   // Fetch sidebar post list once
   useEffect(() => {
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     supabase
       .from('posts')
       .select('id, title, subreddit, author, posted_at, reddit_upvotes, num_comments, score, status')
-      .gte('detected_at', yesterday)
       .order('score', { ascending: false })
-      .limit(100)
+      .limit(200)
       .then(({ data }) => setPosts(data ?? []))
   }, [])
 
@@ -106,15 +104,15 @@ export default function MessageReview() {
   const postUrl = post ? `https://reddit.com/comments/${post.reddit_post_id}` : '#'
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 16, height: 'calc(100vh - 89px)' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 10, height: 'calc(100vh - 113px)' }}>
 
       {/* Left sidebar — post list */}
-      <div style={{ border: '1px solid #1f1f1f', borderRadius: 12, background: '#0e0e0e', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ border: '1px solid #2e2e2e', borderRadius: 12, background: '#0e0e0e', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <span style={{ fontSize: 11.5, color: '#7a7a7a' }}>Sorted by</span>
-          <span style={{ fontSize: 11.5, color: '#e5e5e5', fontWeight: 500 }}>lead score ↓</span>
+          <span style={{ fontSize: 12, color: '#9a9a9a' }}>Sorted by</span>
+          <span style={{ fontSize: 12, color: '#e5e5e5', fontWeight: 500 }}>lead score ↓</span>
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 11, color: '#5a5a5a', fontFamily: 'ui-monospace, monospace' }}>{posts.length} posts</span>
+          <span style={{ fontSize: 11.5, color: '#5a5a5a' }}>{posts.length} posts</span>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {posts.map((p) => (
@@ -130,17 +128,21 @@ export default function MessageReview() {
 
       {/* Right — post detail */}
       {loading ? (
-        <div style={{ border: '1px solid #1f1f1f', borderRadius: 12, background: '#0e0e0e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5a5a5a', fontSize: 14 }}>
+        <div style={{ border: '1px solid #2e2e2e', borderRadius: 12, background: '#0e0e0e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5a5a5a', fontSize: 14 }}>
           Loading...
         </div>
       ) : post ? (
-        <div style={{ border: '1px solid #1f1f1f', borderRadius: 12, background: '#0e0e0e', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ border: '1px solid #2e2e2e', borderRadius: 12, background: '#0e0e0e', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
           {/* Header strip */}
           <div style={{ padding: '12px 18px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
             <SubBadge sub={post.subreddit} />
-            <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
-            <span style={{ fontSize: 11.5, color: '#9a9a9a' }}>u/{post.author}</span>
+            {!post.subreddit?.toLowerCase().startsWith('u_') && (
+              <>
+                <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
+                <span style={{ fontSize: 11.5, color: '#9a9a9a' }}>u/{post.author}</span>
+              </>
+            )}
             <div style={{ flex: 1 }} />
             <span style={{ fontSize: 11, color: '#7a7a7a', fontFamily: 'ui-monospace, monospace' }}>
               posted {timeAgo(post.posted_at)}
@@ -223,37 +225,49 @@ function SidebarItem({ post, selected, onClick }) {
     }
   }, [selected])
 
+  const mins = (Date.now() - new Date(post.posted_at).getTime()) / 60_000
+  const fresh = mins < 30
+  const aging = mins < 90
+  const timeColor = fresh ? '#22d3a8' : aging ? '#fbbf24' : '#ff5d6c'
+  const timeBg = fresh ? 'rgba(34,211,168,0.1)' : aging ? 'rgba(251,191,36,0.1)' : 'rgba(255,93,108,0.1)'
+
   return (
     <div
       ref={ref}
       onClick={onClick}
       style={{
-        padding: '12px 14px',
+        padding: '10px 12px',
         borderBottom: '1px solid #161616',
-        background: selected ? `${ACCENT}10` : 'transparent',
+        background: selected ? `linear-gradient(90deg, ${ACCENT}0d, transparent 60%)` : 'transparent',
         borderLeft: selected ? `2px solid ${ACCENT}` : '2px solid transparent',
-        display: 'flex', gap: 10, cursor: 'pointer',
+        display: 'grid',
+        gridTemplateColumns: '30px 1fr',
+        gap: 8,
+        cursor: 'pointer',
         transition: 'background 0.1s',
+        alignItems: 'start',
       }}
     >
-      <div style={{ flexShrink: 0, paddingTop: 2 }}>
-        <ScoreRing score={post.score} size={32} />
+      <div style={{ paddingTop: 2 }}>
+        <ScoreRing score={post.score} size={28} />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ minWidth: 0 }}>
         <div style={{
           fontSize: 12.5, fontWeight: 500, color: selected ? '#fff' : '#e5e5e5',
-          lineHeight: 1.35, marginBottom: 6,
+          lineHeight: 1.35, marginBottom: 5,
           display: '-webkit-box', WebkitLineClamp: 2,
           WebkitBoxOrient: 'vertical', overflow: 'hidden',
         }}>
           {post.title}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'nowrap', overflow: 'hidden' }}>
           <SubBadge sub={post.subreddit} small />
-          <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
-          <span style={{ fontSize: 10.5, color: '#7a7a7a', fontFamily: 'ui-monospace, monospace' }}>{timeAgo(post.posted_at)}</span>
-          <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
-          <span style={{ fontSize: 10.5, color: '#7a7a7a' }}>↑{post.reddit_upvotes ?? 0} · 💬{post.num_comments ?? 0}</span>
+          <span style={{ fontSize: 10, color: '#3a3a3a', flexShrink: 0 }}>·</span>
+          <span style={{ fontSize: 10.5, color: '#7a7a7a', flexShrink: 0 }}>↑{post.reddit_upvotes ?? 0}</span>
+          <span style={{ fontSize: 10, color: '#3a3a3a', flexShrink: 0 }}>·</span>
+          <span style={{ fontSize: 10.5, color: timeColor, background: timeBg, padding: '1px 5px', borderRadius: 3, flexShrink: 0 }}>
+            {timeAgo(post.posted_at)}
+          </span>
           <div style={{ flex: 1 }} />
           <StatusPill status={post.status} />
         </div>
