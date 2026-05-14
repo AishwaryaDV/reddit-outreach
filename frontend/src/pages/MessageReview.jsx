@@ -106,7 +106,7 @@ export default function MessageReview() {
   const postUrl = post ? `https://reddit.com/comments/${post.reddit_post_id}` : '#'
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 16, height: 'calc(100vh - 92px)' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 16, height: 'calc(100vh - 89px)' }}>
 
       {/* Left sidebar — post list */}
       <div style={{ border: '1px solid #1f1f1f', borderRadius: 12, background: '#0e0e0e', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
