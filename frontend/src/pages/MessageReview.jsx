@@ -215,9 +215,17 @@ export default function MessageReview() {
 }
 
 function SidebarItem({ post, selected, onClick }) {
-  const color = scoreColor(post.score)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (selected && ref.current) {
+      ref.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [selected])
+
   return (
     <div
+      ref={ref}
       onClick={onClick}
       style={{
         padding: '12px 14px',

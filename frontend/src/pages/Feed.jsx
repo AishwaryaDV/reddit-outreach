@@ -53,6 +53,7 @@ export default function Feed() {
   const [timeFilter, setTimeFilter] = useState('today')
   const [statusTab, setStatusTab] = useState('all')
   const [lastRunAt, setLastRunAt] = useState(null)
+  const [selectedPostId, setSelectedPostId] = useState(() => sessionStorage.getItem('lastOpenedPostId'))
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [sortOrder, setSortOrder] = useState('newest')
@@ -292,9 +293,13 @@ export default function Feed() {
               <DenseRow
                 key={post.id}
                 post={post}
-                highlight={post.score >= 8}
+                highlight={post.id === selectedPostId}
                 isConfirming={deleteConfirm === post.id}
-                onDM={() => navigate(`/review/${post.id}`)}
+                onDM={() => {
+                  sessionStorage.setItem('lastOpenedPostId', post.id)
+                  setSelectedPostId(post.id)
+                  navigate(`/review/${post.id}`)
+                }}
                 onDeleteRequest={() => setDeleteConfirm(post.id)}
                 onDeleteConfirm={() => handleDelete(post.id)}
                 onDeleteCancel={() => setDeleteConfirm(null)}
