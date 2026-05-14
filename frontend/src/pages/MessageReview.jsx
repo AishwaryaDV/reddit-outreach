@@ -109,13 +109,17 @@ export default function MessageReview() {
       {/* Left sidebar — post list */}
       <div style={{ border: '1px solid #2e2e2e', borderRadius: 12, background: '#0e0e0e', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: '#9a9a9a' }}>Sorted by</span>
-          <span style={{ fontSize: 12, color: '#e5e5e5', fontWeight: 500 }}>lead score ↓</span>
+          <span style={{ fontSize: 12, color: '#9a9a9a' }}>Freshest first</span>
+          <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
+          <span style={{ fontSize: 12, color: '#5a5a5a' }}>opened on top</span>
           <div style={{ flex: 1 }} />
           <span style={{ fontSize: 11.5, color: '#5a5a5a' }}>{posts.length} posts</span>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {posts.map((p) => (
+          {[
+            ...posts.filter((p) => p.id === id),
+            ...posts.filter((p) => p.id !== id).sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at)),
+          ].map((p) => (
             <SidebarItem
               key={p.id}
               post={p}
@@ -236,18 +240,21 @@ function SidebarItem({ post, selected, onClick }) {
       ref={ref}
       onClick={onClick}
       style={{
-        padding: '10px 12px',
+        padding: '10px 12px 10px 14px',
         borderBottom: '1px solid #161616',
         background: selected ? `linear-gradient(90deg, ${ACCENT}0d, transparent 60%)` : 'transparent',
-        borderLeft: selected ? `2px solid ${ACCENT}` : '2px solid transparent',
         display: 'grid',
         gridTemplateColumns: '30px 1fr',
         gap: 8,
         cursor: 'pointer',
         transition: 'background 0.1s',
         alignItems: 'start',
+        position: 'relative',
       }}
     >
+      {selected && (
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: ACCENT }} />
+      )}
       <div style={{ paddingTop: 2 }}>
         <ScoreRing score={post.score} size={28} />
       </div>
