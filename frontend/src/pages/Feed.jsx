@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { timeAgo } from '../lib/time'
@@ -166,48 +166,50 @@ export default function Feed() {
       </div>
 
       {/* Controls row */}
-      <div className="flex items-center gap-2 mb-4">
-        <div className="relative w-44 mr-auto">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#5a5a5a' }}>
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        {/* Search — wider, icon on right */}
+        <div style={{ position: 'relative', marginRight: 'auto' }}>
           <input
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') setSearch(searchInput) }}
-            placeholder="Filter feed…"
+            placeholder="Search posts, subreddits, authors…"
             style={{
-              width: '100%', background: '#1a1a1a', border: '1px solid #262626',
+              width: 260, background: '#1a1a1a', border: '1px solid #262626',
               color: '#cfcfcf', fontSize: 12, borderRadius: 8,
-              padding: '7px 28px 7px 32px', outline: 'none', boxSizing: 'border-box',
+              padding: '7px 32px 7px 12px', outline: 'none', boxSizing: 'border-box',
             }}
           />
-          {searchInput && (
+          {searchInput ? (
             <button
               onClick={() => { setSearch(''); setSearchInput('') }}
-              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#5a5a5a', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#5a5a5a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
+          ) : (
+            <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: '#5a5a5a', pointerEvents: 'none', display: 'flex' }}>
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </span>
           )}
         </div>
 
-        <IconSelect
-          icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" /></svg>}
+        <CustomSelect
+          icon={<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" /></svg>}
           value={sortOrder}
-          onChange={(e) => setSortOrder(e.target.value)}
+          onChange={(val) => setSortOrder(val)}
           options={[{ value: 'newest', label: 'Newest' }, { value: 'oldest', label: 'Oldest' }]}
         />
 
-        <IconSelect
-          icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+        <CustomSelect
+          icon={<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
           value={timeFilter}
-          onChange={(e) => setTimeFilter(e.target.value)}
+          onChange={(val) => setTimeFilter(val)}
           options={TIME_FILTERS}
         />
 
@@ -286,11 +288,11 @@ export default function Feed() {
           {/* Dense table */}
           <div style={{ borderRadius: 12, background: '#0e0e0e', overflow: 'hidden' }}>
             <ColumnHeaders />
-            {posts.map((post, i) => (
+            {posts.map((post) => (
               <DenseRow
                 key={post.id}
                 post={post}
-                highlight={i === 0}
+                highlight={post.score >= 8}
                 isConfirming={deleteConfirm === post.id}
                 onDM={() => navigate(`/review/${post.id}`)}
                 onDeleteRequest={() => setDeleteConfirm(post.id)}
@@ -302,7 +304,7 @@ export default function Feed() {
 
           {/* Bottom bar */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20 }}>
-            <span style={{ fontSize: 12, color: '#5a5a5a', fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>
+            <span style={{ fontSize: 12, color: '#5a5a5a' }}>
               {fromRow}–{toRow} of {total} posts
             </span>
             {totalPages > 1 && (
@@ -474,23 +476,29 @@ function SubBadge({ sub }) {
 
 function Engagement({ upvotes, comments }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11, fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>
-      <span style={{ color: '#e5e5e5' }}>↑ {upvotes ?? 0}</span>
-      <span style={{ color: '#7a7a7a' }}>💬 {comments ?? 0}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#e5e5e5' }}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg>
+        {upvotes ?? 0}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#7a7a7a' }}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        {comments ?? 0}
+      </div>
     </div>
   )
 }
 
 function PostedCell({ postedAt }) {
   const mins = (Date.now() - new Date(postedAt).getTime()) / 60_000
-  const dotColor = mins < 30 ? '#22d3a8' : mins < 90 ? '#fbbf24' : '#ff5d6c'
+  const fresh = mins < 30
+  const aging = mins < 90
+  const color = fresh ? '#22d3a8' : aging ? '#fbbf24' : '#ff5d6c'
+  const bg = fresh ? 'rgba(34,211,168,0.1)' : aging ? 'rgba(251,191,36,0.1)' : 'rgba(255,93,108,0.1)'
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-      <div style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, flexShrink: 0, boxShadow: `0 0 0 2px ${dotColor}30` }} />
-      <span style={{ fontSize: 12, color: '#9a9a9a', fontFamily: 'ui-monospace, SF Mono, Menlo, monospace', whiteSpace: 'nowrap' }}>
-        {timeAgo(postedAt)}
-      </span>
-    </div>
+    <span style={{ fontSize: 11, color, background: bg, padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap', fontFamily: 'ui-monospace, SF Mono, Menlo, monospace' }}>
+      {timeAgo(postedAt)}
+    </span>
   )
 }
 
@@ -526,26 +534,61 @@ function EmptyState({ tab, hasSearch }) {
   )
 }
 
-function IconSelect({ icon, value, onChange, options }) {
+function CustomSelect({ icon, value, onChange, options }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    function handle(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [])
+
+  const selected = options.find((o) => o.value === value) ?? options[0]
+
   return (
-    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-      <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: '#5a5a5a', pointerEvents: 'none' }}>
-        {icon}
-      </span>
-      <select
-        value={value}
-        onChange={onChange}
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
         style={{
-          appearance: 'none', background: '#1a1a1a', border: '1px solid #262626',
-          color: '#cfcfcf', fontSize: 12, borderRadius: 8,
-          padding: '7px 24px 7px 28px', outline: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '7px 10px', background: '#1a1a1a',
+          border: '1px solid #262626', borderRadius: 8,
+          color: '#cfcfcf', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
         }}
       >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-      <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#5a5a5a', pointerEvents: 'none', fontSize: 10 }}>▾</span>
+        <span style={{ color: '#5a5a5a', display: 'flex' }}>{icon}</span>
+        <span>{selected?.label}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+          style={{ color: '#5a5a5a', transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0,
+          background: '#1a1a1a', border: '1px solid #262626', borderRadius: 8,
+          overflow: 'hidden', zIndex: 50, minWidth: '100%',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+        }}>
+          {options.map((o) => (
+            <div
+              key={o.value}
+              onClick={() => { onChange(o.value); setOpen(false) }}
+              style={{
+                padding: '8px 14px', fontSize: 12, cursor: 'pointer',
+                color: o.value === value ? '#fff' : '#9a9a9a',
+                background: o.value === value ? 'rgba(255,255,255,0.06)' : 'transparent',
+                transition: 'background 0.1s',
+              }}
+            >
+              {o.label}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
