@@ -11,6 +11,7 @@ const ACCENT = '#ff4500'
 const TIME_FILTERS = [
   { label: 'Past hour', value: 'hour' },
   { label: 'Today', value: 'today' },
+  { label: 'All time', value: 'all' },
 ]
 
 const STATUS_TABS = [
@@ -85,7 +86,7 @@ export default function Feed() {
     if (tab === 'drafts') {
       query = query.eq('status', 'drafted').lt('detected_at', oneDayAgo)
     } else {
-      query = query.gte('detected_at', filterCutoff(time))
+      if (time !== 'all') query = query.gte('detected_at', filterCutoff(time))
       if (tab === 'approved') query = query.in('status', ['approved', 'sent'])
       else if (tab === 'disapproved') query = query.eq('status', 'cancelled')
     }
