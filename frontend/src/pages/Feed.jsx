@@ -1,8 +1,9 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { timeAgo } from '../lib/time'
 import SetupChecklist from '../components/SetupChecklist'
+import CustomSelect from '../components/CustomSelect'
 
 const PAGE_SIZE = 20
 const ACCENT = '#ff4500'
@@ -309,9 +310,23 @@ export default function Feed() {
 
           {/* Bottom bar */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20 }}>
-            <span style={{ fontSize: 12, color: '#5a5a5a' }}>
-              {fromRow}–{toRow} of {total} posts
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{ fontSize: 12, color: '#5a5a5a' }}>
+                {fromRow}–{toRow} of {total} posts
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {[
+                  { color: '#22d3a8', label: 'Strong (8+)' },
+                  { color: '#fbbf24', label: 'Good (6–7)' },
+                  { color: '#7a7a7a', label: 'Weak (<6)' },
+                ].map(({ color, label }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, color: '#5a5a5a' }}>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
             {totalPages > 1 && (
               <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
             )}
@@ -441,7 +456,7 @@ function ScoreRing({ score, size = 36 }) {
   const radius = (size - 5) / 2
   const circumference = 2 * Math.PI * radius
   const pct = Math.max(0, Math.min(10, score ?? 0)) / 10
-  const color = score >= 8.5 ? '#22d3a8' : score >= 7 ? '#fbbf24' : '#7a7a7a'
+  const color = score >= 8 ? '#22d3a8' : score >= 6 ? '#fbbf24' : '#7a7a7a'
 
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
@@ -539,64 +554,6 @@ function EmptyState({ tab, hasSearch }) {
   )
 }
 
-function CustomSelect({ icon, value, onChange, options }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-
-  useEffect(() => {
-    function handle(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handle)
-    return () => document.removeEventListener('mousedown', handle)
-  }, [])
-
-  const selected = options.find((o) => o.value === value) ?? options[0]
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          padding: '7px 10px', background: '#1a1a1a',
-          border: '1px solid #262626', borderRadius: 8,
-          color: '#cfcfcf', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
-        }}
-      >
-        <span style={{ color: '#5a5a5a', display: 'flex' }}>{icon}</span>
-        <span>{selected?.label}</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-          style={{ color: '#5a5a5a', transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-      {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', left: 0,
-          background: '#1a1a1a', border: '1px solid #262626', borderRadius: 8,
-          overflow: 'hidden', zIndex: 50, minWidth: '100%',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-        }}>
-          {options.map((o) => (
-            <div
-              key={o.value}
-              onClick={() => { onChange(o.value); setOpen(false) }}
-              style={{
-                padding: '8px 14px', fontSize: 12, cursor: 'pointer',
-                color: o.value === value ? '#fff' : '#9a9a9a',
-                background: o.value === value ? 'rgba(255,255,255,0.06)' : 'transparent',
-                transition: 'background 0.1s',
-              }}
-            >
-              {o.label}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 function getPageWindow(current, total) {
   const size = Math.min(5, total)

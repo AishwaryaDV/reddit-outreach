@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { timeAgo } from '../lib/time'
+import CustomSelect from '../components/CustomSelect'
 
 const ACCENT = '#ff4500'
 
@@ -19,15 +20,14 @@ function subColor(sub) {
 }
 
 function scoreLabel(score) {
-  if (score >= 8.5) return 'strong match'
-  if (score >= 7) return 'good match'
-  if (score >= 5) return 'possible match'
+  if (score >= 8) return 'strong match'
+  if (score >= 6) return 'good match'
   return 'weak match'
 }
 
 function scoreColor(score) {
-  if (score >= 8.5) return '#22d3a8'
-  if (score >= 7) return '#fbbf24'
+  if (score >= 8) return '#22d3a8'
+  if (score >= 6) return '#fbbf24'
   return '#7a7a7a'
 }
 
@@ -40,16 +40,57 @@ export default function MessageReview() {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState(null)
+  const [sortOrder, setSortOrder] = useState('newest')
+  const [loadingMore, setLoadingMore] = useState(false)
+  const offsetRef = useRef(0)
+  const hasMoreRef = useRef(true)
+  const loadingRef = useRef(false)
+  const sentinelRef = useRef(null)
 
-  // Fetch sidebar post list once
+  // Initial sidebar fetch — reset on sort change
   useEffect(() => {
+    setPosts([])
+    offsetRef.current = 0
+    hasMoreRef.current = true
+    loadingRef.current = false
     supabase
       .from('posts')
       .select('id, title, subreddit, author, posted_at, reddit_upvotes, num_comments, score, status')
-      .order('score', { ascending: false })
-      .limit(200)
-      .then(({ data }) => setPosts(data ?? []))
-  }, [])
+      .order('posted_at', { ascending: sortOrder === 'oldest' })
+      .range(0, 99)
+      .then(({ data }) => {
+        const rows = data ?? []
+        setPosts(rows)
+        offsetRef.current = rows.length
+        hasMoreRef.current = rows.length === 100
+      })
+  }, [sortOrder])
+
+  // Infinite scroll — load next 100 when sentinel enters viewport
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting || !hasMoreRef.current || loadingRef.current) return
+      loadingRef.current = true
+      setLoadingMore(true)
+      supabase
+        .from('posts')
+        .select('id, title, subreddit, author, posted_at, reddit_upvotes, num_comments, score, status')
+        .order('posted_at', { ascending: sortOrder === 'oldest' })
+        .range(offsetRef.current, offsetRef.current + 99)
+        .then(({ data }) => {
+          const rows = data ?? []
+          setPosts((prev) => [...prev, ...rows])
+          offsetRef.current += rows.length
+          hasMoreRef.current = rows.length === 100
+          loadingRef.current = false
+          setLoadingMore(false)
+        })
+    })
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [sortOrder])
 
   // Fetch selected post + message when id changes
   useEffect(() => {
@@ -108,13 +149,18 @@ export default function MessageReview() {
 
       {/* Left sidebar — post list */}
       <div style={{ border: '1px solid #2e2e2e', borderRadius: 12, background: '#0e0e0e', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '10px 14px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: '#9a9a9a' }}>Freshest first</span>
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <CustomSelect
+            icon={<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" /></svg>}
+            value={sortOrder}
+            onChange={setSortOrder}
+            options={[{ value: 'newest', label: 'Newest' }, { value: 'oldest', label: 'Oldest' }]}
+          />
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 11.5, color: '#5a5a5a' }}>{posts.length} posts</span>
+          <span style={{ fontSize: 11, color: '#5a5a5a' }}>{posts.length}{hasMoreRef.current ? '+' : ''} posts</span>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {[...posts].sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at)).map((p) => (
+          {posts.map((p) => (
             <SidebarItem
               key={p.id}
               post={p}
@@ -122,6 +168,12 @@ export default function MessageReview() {
               onClick={() => navigate(`/review/${p.id}`)}
             />
           ))}
+          <div ref={sentinelRef} style={{ height: 1 }} />
+          {loadingMore && (
+            <div style={{ padding: '10px 14px', fontSize: 11, color: '#5a5a5a', textAlign: 'center' }}>
+              Loading more…
+            </div>
+          )}
         </div>
       </div>
 
@@ -139,6 +191,14 @@ export default function MessageReview() {
             <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
             <span style={{ fontSize: 11.5, color: '#9a9a9a' }}>u/{post.author}</span>
             <div style={{ flex: 1 }} />
+            {message?.send_after && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 9px', background: '#1a1a1a', border: '1px solid #262626', borderRadius: 6 }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#fbbf24', flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                </svg>
+                <Countdown sendAfter={message.send_after} />
+              </div>
+            )}
             <span style={{ fontSize: 11, color: '#7a7a7a' }}>
               posted {timeAgo(post.posted_at)}
             </span>
@@ -282,8 +342,6 @@ function DraftPanel({ message, draft, setDraft, action, onApprove, onDisapprove 
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: ACCENT, boxShadow: `0 0 0 3px ${ACCENT}26`, flexShrink: 0 }} />
         <span style={{ fontSize: 11.5, color: '#e5e5e5', fontWeight: 500 }}>AI draft reply</span>
         <span style={{ fontSize: 11.5, color: '#7a7a7a' }}>· tone: helpful, casual</span>
-        <div style={{ flex: 1 }} />
-        {message?.send_after && <Countdown sendAfter={message.send_after} />}
       </div>
 
       {/* Draft body */}
