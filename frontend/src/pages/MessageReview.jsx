@@ -110,16 +110,11 @@ export default function MessageReview() {
       <div style={{ border: '1px solid #2e2e2e', borderRadius: 12, background: '#0e0e0e', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <span style={{ fontSize: 12, color: '#9a9a9a' }}>Freshest first</span>
-          <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
-          <span style={{ fontSize: 12, color: '#5a5a5a' }}>opened on top</span>
           <div style={{ flex: 1 }} />
           <span style={{ fontSize: 11.5, color: '#5a5a5a' }}>{posts.length} posts</span>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {[
-            ...posts.filter((p) => p.id === id),
-            ...posts.filter((p) => p.id !== id).sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at)),
-          ].map((p) => (
+          {[...posts].sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at)).map((p) => (
             <SidebarItem
               key={p.id}
               post={p}
