@@ -64,15 +64,17 @@ def set_setting(key: str, value: str):
     get_client().table("app_settings").upsert({"key": key, "value": value}).execute()
 
 
-def get_search_terms() -> list[str]:
+def get_search_terms() -> list[str] | None:
+    """Enabled terms from DB. Returns [] when the user disabled all terms
+    (watcher should skip the run), None on DB error (watcher falls back to config)."""
     try:
         result = (
             get_client()
             .table("search_terms")
             .select("term")
-            .eq("enabled", True)
+            .eq("active", True)
             .execute()
         )
         return [row["term"] for row in result.data if row.get("term")]
     except Exception:
-        return []
+        return None

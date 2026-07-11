@@ -97,12 +97,13 @@ function SearchTermsSection() {
   }
 
   async function handleToggle(term) {
-    await supabase
+    const { error: dbError } = await supabase
       .from('search_terms')
-      .update({ enabled: !term.enabled })
+      .update({ active: !term.active })
       .eq('id', term.id)
+    if (dbError) return
     setTerms((prev) =>
-      prev.map((t) => (t.id === term.id ? { ...t, enabled: !t.enabled } : t))
+      prev.map((t) => (t.id === term.id ? { ...t, active: !t.active } : t))
     )
   }
 
@@ -123,7 +124,7 @@ function SearchTermsSection() {
     setError('')
     const { data, error: dbError } = await supabase
       .from('search_terms')
-      .insert({ term: trimmed, enabled: true })
+      .insert({ term: trimmed, active: true })
       .select()
       .single()
     if (dbError) {
@@ -135,14 +136,14 @@ function SearchTermsSection() {
     setAdding(false)
   }
 
-  const enabledCount = terms.filter((t) => t.enabled).length
+  const enabledCount = terms.filter((t) => t.active).length
 
   return (
     <section>
       <div className="mb-3">
         <h2 className="text-sm font-semibold text-white">Search Terms</h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          {enabledCount} of {terms.length} enabled — watcher uses these to search Reddit every 2 minutes
+          {enabledCount} of {terms.length} enabled — watcher uses these to search Reddit every 10 minutes
         </p>
       </div>
 
@@ -160,16 +161,16 @@ function SearchTermsSection() {
                   <button
                     onClick={() => handleToggle(term)}
                     className={`w-8 h-4 rounded-full transition-colors relative shrink-0 ${
-                      term.enabled ? 'bg-emerald-500' : 'bg-white/10'
+                      term.active ? 'bg-emerald-500' : 'bg-white/10'
                     }`}
                   >
                     <span
                       className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
-                        term.enabled ? 'left-4' : 'left-0.5'
+                        term.active ? 'left-4' : 'left-0.5'
                       }`}
                     />
                   </button>
-                  <span className={`text-sm ${term.enabled ? 'text-slate-300' : 'text-slate-600'}`}>
+                  <span className={`text-sm ${term.active ? 'text-slate-300' : 'text-slate-600'}`}>
                     {term.term}
                   </span>
                 </div>
