@@ -23,6 +23,17 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 scheduler = AsyncIOScheduler()
 
+# asyncio only holds weak refs to tasks — keep strong refs so background
+# runs aren't garbage-collected mid-execution
+_background_tasks: set = set()
+
+
+def _spawn(coro):
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,7 +42,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(process_auto_sends, "interval", minutes=1, id="auto_send")
     scheduler.start()
     logging.info("Watcher scheduler started — running every %d minutes", WATCHER_INTERVAL_MINUTES)
-    asyncio.create_task(run_watcher())
+    _spawn(run_watcher())
     yield
     scheduler.shutdown()
     logging.info("Scheduler stopped")
@@ -90,16 +101,18 @@ def notifications_toggle():
 
 @app.post("/messages/{message_id}/send")
 async def manual_send(message_id: str):
+    # .single() raises on zero rows — use maybe_single so a missing/already-sent
+    # message returns a proper 404 instead of a 500
     result = (
         get_client()
         .table("messages")
         .select("id, post_id, final_message, draft, posts(author)")
         .eq("id", message_id)
         .in_("status", ["approved", "pending"])
-        .single()
+        .maybe_single()
         .execute()
     )
-    row = result.data
+    row = result.data if result else None
     if not row:
         raise HTTPException(status_code=404, detail="Message not found or not in sendable state")
 
@@ -122,11 +135,11 @@ async def search_reddit(q: str):
 
 @app.get("/watcher/run")
 async def trigger_watcher():
-    asyncio.create_task(run_watcher())
+    _spawn(run_watcher())
     return {"status": "watcher triggered"}
 
 
 @app.get("/watcher/backfill")
 async def trigger_backfill():
-    asyncio.create_task(run_watcher(time_filter="day"))
-    return {"status": "backfill triggered — searching all 14 terms for past 24h"}
+    _spawn(run_watcher(time_filter="day"))
+    return {"status": "backfill triggered — searching all terms for past 24h"}

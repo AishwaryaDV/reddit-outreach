@@ -35,6 +35,10 @@ async def fetch_posts(term: str, time_filter: str = "hour") -> list[dict]:
         except httpx.RequestError as e:
             logger.error("Reddit request failed for term '%s': %s", term, e)
             return []
+        except ValueError:
+            # Reddit occasionally returns HTML error pages with status 200
+            logger.warning("Reddit returned non-JSON response for term: %s", term)
+            return []
 
 
 _URL_RE = re.compile(r"https?://\S+")
@@ -260,13 +264,14 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
         post_id = save_post(post_data)
         new_count += 1
 
-        if score is not None:
-            send_notification(
-                post={**post_data, "reddit_post_id": reddit_post_id},
-                score=score,
-                reason=reason,
-                draft=draft,
-            )
+        # SMTP is slow and blocking — keep it off the event loop
+        await asyncio.to_thread(
+            send_notification,
+            post={**post_data, "reddit_post_id": reddit_post_id},
+            score=score,
+            reason=reason,
+            draft=draft,
+        )
 
         if draft:
             send_after = (
@@ -297,23 +302,43 @@ async def search_term(term: str) -> int:
     return count or 0
 
 
+_watcher_lock = asyncio.Lock()
+
+
 async def run_watcher(time_filter: str = "hour"):
-    logger.info("Watcher run started (filter: %s)", time_filter)
-    recent_drafts = get_recent_drafts(limit=5)
-    seen_author_titles: set = set()
+    # Startup task, scheduler ticks, /watcher/run and /watcher/backfill can all
+    # fire this — overlapping runs race the post_exists/save_post dedup check.
+    if _watcher_lock.locked():
+        logger.info("Watcher already running — skipping this trigger")
+        return
 
-    db_terms = get_search_terms()
-    active_terms = db_terms if db_terms else SEARCH_TERMS
-    logger.info("Using %d search term(s) (%s)", len(active_terms), "from DB" if db_terms else "from config")
+    async with _watcher_lock:
+        logger.info("Watcher run started (filter: %s)", time_filter)
+        recent_drafts = get_recent_drafts(limit=5)
+        seen_author_titles: set = set()
 
-    for i, term in enumerate(active_terms):
-        await process_term(term, recent_drafts, time_filter, seen_author_titles)
-        if i < len(active_terms) - 1:
-            await asyncio.sleep(2)
+        db_terms = get_search_terms()
+        if db_terms is None:
+            active_terms = SEARCH_TERMS
+            logger.info("Using %d search term(s) from config (DB unavailable)", len(active_terms))
+        elif not db_terms:
+            logger.info("All search terms disabled in Settings — skipping run")
+            return
+        else:
+            active_terms = db_terms
+            logger.info("Using %d search term(s) from DB", len(active_terms))
 
-    global _last_run_at
-    _last_run_at = datetime.now(tz=timezone.utc).isoformat()
-    logger.info("Watcher run complete")
+        for i, term in enumerate(active_terms):
+            try:
+                await process_term(term, recent_drafts, time_filter, seen_author_titles)
+            except Exception:
+                logger.exception("Term '%s' failed — continuing with remaining terms", term)
+            if i < len(active_terms) - 1:
+                await asyncio.sleep(2)
+
+        global _last_run_at
+        _last_run_at = datetime.now(tz=timezone.utc).isoformat()
+        logger.info("Watcher run complete")
 
 
 def run_cleanup():
