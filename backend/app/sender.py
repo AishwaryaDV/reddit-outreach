@@ -38,16 +38,19 @@ def _sent_today_count() -> int:
         get_client()
         .table("messages")
         .select("id", count="exact")
-        .eq("status", "sent")
-        .gte("updated_at", today)
+        .in_("status", ["sent", "dry_sent"])
+        .gte("sent_at", today)
         .execute()
     )
     return result.count or 0
 
 
-def _mark_sent(message_id: str, post_id: str):
-    get_client().table("messages").update({"status": "sent"}).eq("id", message_id).execute()
-    get_client().table("posts").update({"status": "sent"}).eq("id", post_id).execute()
+def _mark_sent(message_id: str, post_id: str, dry_run: bool = False):
+    # dry_sent keeps test sends distinguishable from real CRM history
+    status = "dry_sent" if dry_run else "sent"
+    sent_at = datetime.now(tz=timezone.utc).isoformat()
+    get_client().table("messages").update({"status": status, "sent_at": sent_at}).eq("id", message_id).execute()
+    get_client().table("posts").update({"status": status}).eq("id", post_id).execute()
 
 
 def send_dm(message_id: str, post_id: str, recipient: str, body: str) -> dict:
@@ -57,19 +60,19 @@ def send_dm(message_id: str, post_id: str, recipient: str, body: str) -> dict:
     """
     effective_dry_run = DRY_RUN or not _credentials_present()
 
+    sent_today = _sent_today_count()
+    if sent_today >= DAILY_DM_CAP:
+        logger.warning("Daily DM cap (%d) reached — skipping u/%s", DAILY_DM_CAP, recipient)
+        return {"sent": False, "dry_run": effective_dry_run, "reason": f"Daily cap of {DAILY_DM_CAP} reached"}
+
     if effective_dry_run:
         reason = "DRY_RUN=true" if DRY_RUN else "Reddit credentials not configured"
         logger.info(
             "DRY RUN — would send DM to u/%s (message %s): %s",
             recipient, message_id, body[:80],
         )
-        _mark_sent(message_id, post_id)
+        _mark_sent(message_id, post_id, dry_run=True)
         return {"sent": True, "dry_run": True, "reason": reason}
-
-    sent_today = _sent_today_count()
-    if sent_today >= DAILY_DM_CAP:
-        logger.warning("Daily DM cap (%d) reached — skipping u/%s", DAILY_DM_CAP, recipient)
-        return {"sent": False, "dry_run": False, "reason": f"Daily cap of {DAILY_DM_CAP} reached"}
 
     try:
         _get_reddit().redditor(recipient).message(

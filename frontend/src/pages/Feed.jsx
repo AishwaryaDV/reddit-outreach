@@ -87,13 +87,13 @@ export default function Feed() {
       query = query.eq('status', 'drafted').lt('detected_at', oneDayAgo)
     } else {
       if (time !== 'all') query = query.gte('detected_at', filterCutoff(time))
-      if (tab === 'approved') query = query.in('status', ['approved', 'sent'])
+      if (tab === 'approved') query = query.in('status', ['approved', 'sent', 'dry_sent'])
       else if (tab === 'disapproved') query = query.eq('status', 'cancelled')
     }
 
     if (searchQuery.trim()) {
-      const q = searchQuery.trim()
-      query = query.or(`title.ilike.%${q}%,subreddit.ilike.%${q}%,author.ilike.%${q}%`)
+      const q = searchQuery.trim().replace(/[,().%]/g, '')
+      if (q) query = query.or(`title.ilike.%${q}%,subreddit.ilike.%${q}%,author.ilike.%${q}%`)
     }
 
     const from = currentPage * PAGE_SIZE
@@ -114,8 +114,11 @@ export default function Feed() {
     const channel = supabase
       .channel('posts-feed')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, (payload) => {
-        if (statusTab === 'all' && page === 0 && !search) {
-          setPosts((prev) => [payload.new, ...prev].slice(0, PAGE_SIZE))
+        if (statusTab === 'all' && page === 0 && !search && sortOrder === 'newest') {
+          setPosts((prev) => {
+            if (prev.some((p) => p.id === payload.new.id)) return prev
+            return [payload.new, ...prev].slice(0, PAGE_SIZE)
+          })
           setTotal((prev) => prev + 1)
         }
       })
@@ -229,7 +232,6 @@ export default function Feed() {
               flex: 1, padding: '10px 14px', fontSize: 12.5,
               fontWeight: statusTab === tab.value ? 600 : 500,
               color: statusTab === tab.value ? '#fff' : '#7a7a7a',
-              borderBottom: statusTab === tab.value ? `2px solid ${ACCENT}` : '2px solid transparent',
               marginBottom: -1, background: 'none', border: 'none',
               borderBottom: statusTab === tab.value ? `2px solid ${ACCENT}` : '2px solid transparent',
               cursor: 'pointer', textAlign: 'center', transition: 'color 0.15s',
@@ -318,8 +320,8 @@ export default function Feed() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {[
                   { color: '#22d3a8', label: 'Strong (8+)' },
-                  { color: '#fbbf24', label: 'Good (6–7)' },
-                  { color: '#7a7a7a', label: 'Weak (<6)' },
+                  { color: '#fbbf24', label: 'Good (5–7)' },
+                  { color: '#7a7a7a', label: 'Weak (3–4)' },
                 ].map(({ color, label }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
@@ -457,7 +459,7 @@ function ScoreRing({ score, size = 36 }) {
   const radius = (size - 5) / 2
   const circumference = 2 * Math.PI * radius
   const pct = Math.max(0, Math.min(10, score ?? 0)) / 10
-  const color = score >= 8 ? '#22d3a8' : score >= 6 ? '#fbbf24' : '#7a7a7a'
+  const color = score >= 8 ? '#22d3a8' : score >= 5 ? '#fbbf24' : '#7a7a7a'
 
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
@@ -549,7 +551,7 @@ function EmptyState({ tab, hasSearch }) {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 192, gap: 8 }}>
       <p style={{ color: '#5a5a5a', fontSize: 14, margin: 0 }}>{messages[tab]}</p>
       {tab === 'all' && (
-        <p style={{ color: '#3a3a3a', fontSize: 12, margin: 0 }}>Watcher runs every 2 minutes — posts appear here in real time</p>
+        <p style={{ color: '#3a3a3a', fontSize: 12, margin: 0 }}>Watcher runs every 10 minutes — posts appear here in real time</p>
       )}
     </div>
   )

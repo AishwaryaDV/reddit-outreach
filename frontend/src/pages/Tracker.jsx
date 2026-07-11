@@ -14,8 +14,8 @@ export default function Tracker() {
       const { data } = await supabase
         .from('messages')
         .select('*, posts(*)')
-        .eq('status', 'sent')
-        .order('created_at', { ascending: false })
+        .in('status', ['sent', 'dry_sent'])
+        .order('sent_at', { ascending: false, nullsFirst: false })
 
       setItems(data ?? [])
       setLoading(false)
@@ -68,7 +68,8 @@ export default function Tracker() {
 
 function TrackerCard({ item, onViewPost }) {
   const post = item.posts
-  const sentAt = item.updated_at ? new Date(item.updated_at) : null
+  const sentAt = item.sent_at ? new Date(item.sent_at) : null
+  const isDry = item.status === 'dry_sent'
 
   return (
     <div className="bg-white/3 border border-white/8 rounded-xl p-4">
@@ -85,7 +86,7 @@ function TrackerCard({ item, onViewPost }) {
             {sentAt && (
               <>
                 <span className="text-slate-700">·</span>
-                <span className="text-xs text-slate-600">sent {timeAgo(item.updated_at)}</span>
+                <span className="text-xs text-slate-600">{isDry ? 'dry-run' : 'sent'} {timeAgo(item.sent_at)}</span>
               </>
             )}
           </div>
@@ -98,7 +99,9 @@ function TrackerCard({ item, onViewPost }) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <ScoreBadge score={post?.score} />
-          <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">sent</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${isDry ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
+            {isDry ? 'dry-run' : 'sent'}
+          </span>
         </div>
       </div>
 

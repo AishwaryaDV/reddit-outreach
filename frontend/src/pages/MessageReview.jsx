@@ -21,13 +21,13 @@ function subColor(sub) {
 
 function scoreLabel(score) {
   if (score >= 8) return 'strong match'
-  if (score >= 6) return 'good match'
+  if (score >= 5) return 'good match'
   return 'weak match'
 }
 
 function scoreColor(score) {
   if (score >= 8) return '#22d3a8'
-  if (score >= 6) return '#fbbf24'
+  if (score >= 5) return '#fbbf24'
   return '#7a7a7a'
 }
 
@@ -52,7 +52,7 @@ export default function MessageReview() {
     setPosts([])
     offsetRef.current = 0
     hasMoreRef.current = true
-    loadingRef.current = false
+    loadingRef.current = true
     supabase
       .from('posts')
       .select('id, title, subreddit, author, posted_at, reddit_upvotes, num_comments, score, status')
@@ -63,6 +63,7 @@ export default function MessageReview() {
         setPosts(rows)
         offsetRef.current = rows.length
         hasMoreRef.current = rows.length === 100
+        loadingRef.current = false
       })
   }, [sortOrder])
 
@@ -108,10 +109,9 @@ export default function MessageReview() {
 
       const { data: msgData } = await supabase
         .from('messages').select('*').eq('post_id', id)
-        .in('status', ['pending', 'approved'])
         .order('created_at', { ascending: false })
-        .limit(1).single()
-      if (msgData) { setMessage(msgData); setDraft(msgData.draft ?? '') }
+        .limit(1).maybeSingle()
+      if (msgData) { setMessage(msgData); setDraft(msgData.final_message ?? msgData.draft ?? '') }
       setLoading(false)
     }
     load()
@@ -335,6 +335,9 @@ function SidebarItem({ post, selected, onClick }) {
 }
 
 function DraftPanel({ message, draft, setDraft, action, onApprove, onDisapprove }) {
+  const isFinalized = message && ['cancelled', 'sent', 'dry_sent'].includes(message.status)
+  const statusLabel = { cancelled: 'Disapproved', sent: 'Sent', dry_sent: 'Dry-run sent' }
+
   return (
     <div style={{ background: '#0a0a0a' }}>
       {/* Header */}
@@ -349,11 +352,12 @@ function DraftPanel({ message, draft, setDraft, action, onApprove, onDisapprove 
         <>
           <textarea
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => !isFinalized && setDraft(e.target.value)}
+            readOnly={isFinalized}
             rows={5}
             style={{
               width: '100%', background: 'transparent', border: 'none',
-              borderBottom: '1px solid #1f1f1f', color: '#cfcfcf',
+              borderBottom: '1px solid #1f1f1f', color: isFinalized ? '#7a7a7a' : '#cfcfcf',
               fontSize: 12.5, lineHeight: 1.6, padding: '12px 14px',
               resize: 'none', outline: 'none', boxSizing: 'border-box',
               fontFamily: 'inherit',
@@ -361,31 +365,39 @@ function DraftPanel({ message, draft, setDraft, action, onApprove, onDisapprove 
           />
           {/* Footer */}
           <div style={{ padding: '10px 14px', display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button
-              onClick={onApprove}
-              disabled={!!action}
-              style={{
-                padding: '6px 14px', background: ACCENT, color: '#0a0a0a',
-                border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600,
-                cursor: action ? 'not-allowed' : 'pointer', opacity: action ? 0.5 : 1,
-              }}
-            >
-              {action === 'approving' ? 'Approving…' : 'Approve & Queue →'}
-            </button>
-            <button
-              onClick={onDisapprove}
-              disabled={!!action}
-              style={{
-                padding: '6px 12px', background: '#1a1a1a', color: '#9a9a9a',
-                border: '1px solid #262626', borderRadius: 6, fontSize: 12,
-                cursor: action ? 'not-allowed' : 'pointer', opacity: action ? 0.5 : 1,
-              }}
-            >
-              {action === 'disapproving' ? '…' : 'Disapprove'}
-            </button>
-            <p style={{ margin: 0, fontSize: 11, color: '#5a5a5a' }}>
-              Portfolio link must stay in the last line.
-            </p>
+            {isFinalized ? (
+              <span style={{ fontSize: 12, color: '#7a7a7a' }}>
+                {statusLabel[message.status] || message.status}
+              </span>
+            ) : (
+              <>
+                <button
+                  onClick={onApprove}
+                  disabled={!!action}
+                  style={{
+                    padding: '6px 14px', background: ACCENT, color: '#0a0a0a',
+                    border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                    cursor: action ? 'not-allowed' : 'pointer', opacity: action ? 0.5 : 1,
+                  }}
+                >
+                  {action === 'approving' ? 'Approving…' : 'Approve & Queue →'}
+                </button>
+                <button
+                  onClick={onDisapprove}
+                  disabled={!!action}
+                  style={{
+                    padding: '6px 12px', background: '#1a1a1a', color: '#9a9a9a',
+                    border: '1px solid #262626', borderRadius: 6, fontSize: 12,
+                    cursor: action ? 'not-allowed' : 'pointer', opacity: action ? 0.5 : 1,
+                  }}
+                >
+                  {action === 'disapproving' ? '…' : 'Disapprove'}
+                </button>
+                <p style={{ margin: 0, fontSize: 11, color: '#5a5a5a' }}>
+                  Portfolio link must stay in the last line.
+                </p>
+              </>
+            )}
           </div>
         </>
       ) : (
@@ -472,7 +484,8 @@ function StatusPill({ status }) {
     new:       { bg: 'rgba(34,211,168,0.12)',  color: '#22d3a8', label: 'NEW' },
     drafted:   { bg: 'rgba(92,194,255,0.12)',  color: '#5cc2ff', label: 'DRAFT' },
     approved:  { bg: 'rgba(251,191,36,0.12)',  color: '#fbbf24', label: 'QUEUED' },
-    sent:      { bg: 'rgba(34,211,168,0.12)',  color: '#22d3a8', label: 'REPLIED' },
+    sent:      { bg: 'rgba(34,211,168,0.12)',  color: '#22d3a8', label: 'SENT' },
+    dry_sent:  { bg: 'rgba(251,191,36,0.12)',  color: '#fbbf24', label: 'DRY-RUN' },
     cancelled: { bg: 'rgba(90,90,90,0.12)',    color: '#7a7a7a', label: 'PASSED' },
   }
   const s = map[status] ?? map.new
