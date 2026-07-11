@@ -23,9 +23,9 @@ SEARCH_TERMS = [
     "need a fullstack developer",
 ]
 
-WATCHER_INTERVAL_MINUTES = 2
-APPROVAL_WINDOW_MIN = 10
-APPROVAL_WINDOW_MAX = 10
+WATCHER_INTERVAL_MINUTES = 10
+APPROVAL_WINDOW_MIN = 2
+APPROVAL_WINDOW_MAX = 5
 DAILY_DM_CAP = 20
 PORTFOLIO_URL = "https://aishwaryadv.space"
 
@@ -42,4 +42,4 @@ REDDIT_PASSWORD = os.getenv("REDDIT_PASSWORD", "")
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() != "false"
 
 # Cleanup
-POST_RETENTION_DAYS = 5
+POST_RETENTION_DAYS = 30
