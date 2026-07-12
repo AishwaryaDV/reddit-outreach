@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { API } from '../lib/api'
 
 export default function Settings() {
   return (
@@ -21,7 +22,7 @@ function NotificationsSection() {
   const [toggling, setToggling] = useState(false)
 
   useEffect(() => {
-    fetch('http://localhost:8000/notifications/status')
+    fetch(`${API}/notifications/status`)
       .then((r) => r.json())
       .then((d) => { setEnabled(d.enabled); setLoading(false) })
       .catch(() => setLoading(false))
@@ -31,7 +32,7 @@ function NotificationsSection() {
     if (toggling) return
     setToggling(true)
     try {
-      const res = await fetch('http://localhost:8000/notifications/toggle', { method: 'POST' })
+      const res = await fetch(`${API}/notifications/toggle`, { method: 'POST' })
       const data = await res.json()
       setEnabled(data.enabled)
     } catch {
@@ -213,20 +214,41 @@ function SearchTermsSection() {
 function ConfigSection() {
   const [config, setConfig] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(null)
 
   useEffect(() => {
-    fetch('http://localhost:8000/config')
+    fetch(`${API}/config`)
       .then((r) => r.json())
       .then((d) => { setConfig(d); setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
 
-  const rows = config ? [
+  async function handleSave(key, value) {
+    setSaving(key)
+    try {
+      const res = await fetch(`${API}/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value: String(value) }),
+      })
+      const data = await res.json()
+      setConfig(data)
+    } catch {
+      // backend unreachable
+    }
+    setSaving(null)
+  }
+
+  const editableRows = config ? [
+    { label: 'Portfolio URL', key: 'portfolio_url', value: config.portfolio_url, type: 'text' },
+    { label: 'Daily DM cap', key: 'daily_dm_cap', value: config.daily_dm_cap, type: 'number' },
+    { label: 'Approval window (min)', key: 'approval_window_min', value: config.approval_window_min, type: 'number' },
+    { label: 'Approval window (max)', key: 'approval_window_max', value: config.approval_window_max, type: 'number' },
+  ] : []
+
+  const readOnlyRows = config ? [
     { label: 'Watcher interval', value: `${config.watcher_interval_minutes} min` },
-    { label: 'Auto-send window', value: `${config.approval_window_minutes} min after approval` },
-    { label: 'Daily DM cap', value: config.daily_dm_cap },
     { label: 'Post retention', value: `${config.post_retention_days} days` },
-    { label: 'Portfolio URL', value: config.portfolio_url },
     { label: 'Gmail', value: config.gmail_configured ? '✓ Configured' : '✗ Not configured' },
   ] : []
 
@@ -234,7 +256,7 @@ function ConfigSection() {
     <section>
       <div className="mb-3">
         <h2 className="text-sm font-semibold text-white">Config</h2>
-        <p className="text-xs text-slate-500 mt-0.5">Read-only — edit backend/app/config.py to change</p>
+        <p className="text-xs text-slate-500 mt-0.5">Edit values below — changes take effect on the next watcher cycle</p>
       </div>
 
       {loading ? (
@@ -243,11 +265,21 @@ function ConfigSection() {
         <div className="text-slate-600 text-sm">Backend offline — start the server to see config</div>
       ) : (
         <div className="bg-white/3 border border-white/8 rounded-xl overflow-hidden">
-          {rows.map((row, i) => (
+          {editableRows.map((row) => (
+            <EditableConfigRow
+              key={row.key}
+              label={row.label}
+              value={row.value}
+              type={row.type}
+              saving={saving === row.key}
+              onSave={(val) => handleSave(row.key, val)}
+            />
+          ))}
+          {readOnlyRows.map((row, i) => (
             <div
               key={row.label}
               className={`flex items-center justify-between px-4 py-2.5 text-sm ${
-                i < rows.length - 1 ? 'border-b border-white/5' : ''
+                i < readOnlyRows.length - 1 ? 'border-b border-white/5' : ''
               }`}
             >
               <span className="text-slate-500">{row.label}</span>
@@ -263,5 +295,44 @@ function ConfigSection() {
         </div>
       )}
     </section>
+  )
+}
+
+function EditableConfigRow({ label, value, type, saving, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(String(value))
+
+  function handleSubmit(e) {
+    e.preventDefault()
+    const trimmed = draft.trim()
+    if (!trimmed || trimmed === String(value)) { setEditing(false); return }
+    onSave(trimmed)
+    setEditing(false)
+  }
+
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5 text-sm border-b border-white/5">
+      <span className="text-slate-500">{label}</span>
+      {editing ? (
+        <form onSubmit={handleSubmit} className="flex items-center gap-2">
+          <input
+            autoFocus
+            type={type}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => setEditing(false)}
+            className="bg-white/5 border border-white/10 text-slate-300 text-xs font-mono rounded px-2 py-1 outline-none focus:border-white/20 w-40 text-right"
+          />
+        </form>
+      ) : (
+        <button
+          onClick={() => { setDraft(String(value)); setEditing(true) }}
+          disabled={saving}
+          className="font-mono text-xs text-slate-300 hover:text-white transition-colors cursor-pointer bg-transparent border-none p-0"
+        >
+          {saving ? '…' : value}
+        </button>
+      )}
+    </div>
   )
 }
