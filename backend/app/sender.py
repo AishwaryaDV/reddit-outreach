@@ -8,7 +8,7 @@ from app.config import (
     REDDIT_USERNAME, REDDIT_PASSWORD,
     DAILY_DM_CAP, DRY_RUN,
 )
-from app.database import get_client
+from app.database import get_client, get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +60,11 @@ def send_dm(message_id: str, post_id: str, recipient: str, body: str) -> dict:
     """
     effective_dry_run = DRY_RUN or not _credentials_present()
 
+    cap = int(get_setting("daily_dm_cap", str(DAILY_DM_CAP)))
     sent_today = _sent_today_count()
-    if sent_today >= DAILY_DM_CAP:
-        logger.warning("Daily DM cap (%d) reached — skipping u/%s", DAILY_DM_CAP, recipient)
-        return {"sent": False, "dry_run": effective_dry_run, "reason": f"Daily cap of {DAILY_DM_CAP} reached"}
+    if sent_today >= cap:
+        logger.warning("Daily DM cap (%d) reached — skipping u/%s", cap, recipient)
+        return {"sent": False, "dry_run": effective_dry_run, "reason": f"Daily cap of {cap} reached"}
 
     if effective_dry_run:
         reason = "DRY_RUN=true" if DRY_RUN else "Reddit credentials not configured"

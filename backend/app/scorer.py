@@ -1,12 +1,17 @@
 import json
 import re
 import logging
-from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
 from app.config import PORTFOLIO_URL
+from app.database import get_setting
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = f"""You are a filter for a personal Reddit job outreach tool. The owner is a freelance fullstack developer (3 years experience, React specialist, also does Node/backend, MVP builds, web apps).
+
+def _get_portfolio_url():
+    return get_setting("portfolio_url", PORTFOLIO_URL)
+
+
+SYSTEM_PROMPT_TEMPLATE = """You are a filter for a personal Reddit job outreach tool. The owner is a freelance fullstack developer (3 years experience, React specialist, also does Node/backend, MVP builds, web apps).
 
 Your job: read a Reddit post and decide if it's worth reaching out to, score it, and if so — write a short personalized DM.
 
@@ -64,7 +69,7 @@ You will receive the last few messages sent as context. Ensure your new draft is
 - Hook openers: "Saw your post", "This looks like a great fit", "Right up my alley", "Came across your post", "React dev here", etc.
 - Portfolio CTAs: "Here's my portfolio", "Checkout my portfolio", "My work", "My portfolio", "See my work at", etc.
 
-Portfolio URL is always: {PORTFOLIO_URL}
+Portfolio URL is always: {portfolio_url}
 
 ---
 
@@ -76,12 +81,16 @@ Return ONLY valid JSON in this exact format, no other text:
 }}"""
 
 
+def _build_system_prompt():
+    return SYSTEM_PROMPT_TEMPLATE.format(portfolio_url=_get_portfolio_url())
+
+
 async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None = None) -> dict | None:
     # MOCK — swap back to real scorer once Claude quota resets
     return {
         "score": 7,
         "reason": "Mock score for pipeline testing — real scorer disabled",
-        "draft": "Saw your post and this looks right up my alley. I build React apps and MVPs for founders and small teams — here's my work: https://aishwaryadv.space",
+        "draft": f"Saw your post and this looks right up my alley. I build React apps and MVPs for founders and small teams — here's my work: {_get_portfolio_url()}",
     }
 
     # --- REAL SCORER (re-enable when quota resets) ---

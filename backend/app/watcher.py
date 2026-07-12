@@ -7,7 +7,7 @@ from random import randint
 import httpx
 
 from app.config import SEARCH_TERMS, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX
-from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts, get_search_terms
+from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts, get_search_terms, get_setting
 from app.scorer import score_and_draft
 from app.notifications import send_notification
 
@@ -274,9 +274,11 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
         )
 
         if draft:
+            window_min = int(get_setting("approval_window_min", str(APPROVAL_WINDOW_MIN)))
+            window_max = int(get_setting("approval_window_max", str(APPROVAL_WINDOW_MAX)))
             send_after = (
                 datetime.now(tz=timezone.utc)
-                + timedelta(minutes=randint(APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX))
+                + timedelta(minutes=randint(window_min, window_max))
             ).isoformat()
 
             save_message({
