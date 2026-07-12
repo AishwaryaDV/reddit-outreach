@@ -8,10 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import (
     WATCHER_INTERVAL_MINUTES, GMAIL_USER, GMAIL_APP_PASSWORD, NOTIFY_EMAILS,
-    APPROVAL_WINDOW_MIN, DAILY_DM_CAP, PORTFOLIO_URL, POST_RETENTION_DAYS, DRY_RUN,
+    APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX, DAILY_DM_CAP, PORTFOLIO_URL, POST_RETENTION_DAYS, DRY_RUN,
+    CORS_ORIGINS,
 )
 from app.watcher import run_watcher, run_cleanup, get_last_run_at, search_term
 from app.sender import process_auto_sends, send_dm
+from pydantic import BaseModel
 from app.database import get_client, get_setting, set_setting
 
 logging.basicConfig(
@@ -52,7 +54,7 @@ app = FastAPI(title="Reddit Outreach API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "https://reddit.aishwaryadv.space"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -73,16 +75,35 @@ def status():
     }
 
 
-@app.get("/config")
-def get_config():
+def _get_live_config():
     return {
+        "portfolio_url": get_setting("portfolio_url", PORTFOLIO_URL),
+        "daily_dm_cap": int(get_setting("daily_dm_cap", str(DAILY_DM_CAP))),
+        "approval_window_min": int(get_setting("approval_window_min", str(APPROVAL_WINDOW_MIN))),
+        "approval_window_max": int(get_setting("approval_window_max", str(APPROVAL_WINDOW_MAX))),
         "watcher_interval_minutes": WATCHER_INTERVAL_MINUTES,
-        "approval_window_minutes": APPROVAL_WINDOW_MIN,
-        "daily_dm_cap": DAILY_DM_CAP,
-        "portfolio_url": PORTFOLIO_URL,
         "post_retention_days": POST_RETENTION_DAYS,
         "gmail_configured": bool(GMAIL_USER and GMAIL_APP_PASSWORD and NOTIFY_EMAILS),
     }
+
+
+@app.get("/config")
+def get_config():
+    return _get_live_config()
+
+
+class ConfigUpdate(BaseModel):
+    key: str
+    value: str
+
+
+@app.post("/config")
+def update_config(body: ConfigUpdate):
+    allowed = {"portfolio_url", "daily_dm_cap", "approval_window_min", "approval_window_max"}
+    if body.key not in allowed:
+        raise HTTPException(status_code=400, detail=f"Key '{body.key}' is not editable")
+    set_setting(body.key, body.value)
+    return _get_live_config()
 
 
 @app.get("/notifications/status")

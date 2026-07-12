@@ -43,3 +43,9 @@ DRY_RUN = os.getenv("DRY_RUN", "true").lower() != "false"
 
 # Cleanup
 POST_RETENTION_DAYS = 30
+
+# CORS
+CORS_ORIGINS = [o.strip() for o in os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:5173,http://localhost:5174,http://localhost:5175,https://reddit.aishwaryadv.space"
+).split(",") if o.strip()]
