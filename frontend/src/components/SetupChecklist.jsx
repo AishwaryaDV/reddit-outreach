@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { API } from '../lib/api'
 
 const ITEMS = [
   {
@@ -22,7 +23,7 @@ export default function SetupChecklist() {
   )
 
   useEffect(() => {
-    fetch('http://localhost:8000/status')
+    fetch(`${API}/status`)
       .then((r) => r.json())
       .then(setStatus)
       .catch(() => setStatus({}))

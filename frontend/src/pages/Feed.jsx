@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { API } from '../lib/api'
 import { timeAgo } from '../lib/time'
 import SetupChecklist from '../components/SetupChecklist'
 import CustomSelect from '../components/CustomSelect'
@@ -68,7 +69,7 @@ export default function Feed() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    fetch('http://localhost:8000/status')
+    fetch(`${API}/status`)
       .then((r) => r.json())
       .then((d) => setLastRunAt(d.last_run_at))
       .catch(() => {})
@@ -141,7 +142,7 @@ export default function Feed() {
     setLiveSearching(true)
     setLiveResult(null)
     try {
-      const res = await fetch(`http://localhost:8000/search/reddit?q=${encodeURIComponent(liveQuery.trim())}`)
+      const res = await fetch(`${API}/search/reddit?q=${encodeURIComponent(liveQuery.trim())}`)
       const data = await res.json()
       setLiveResult(data)
     } catch {
@@ -601,7 +602,7 @@ function BackfillButton() {
   async function handleClick() {
     if (state !== 'idle') return
     setState('loading')
-    try { await fetch('http://localhost:8000/watcher/backfill') } catch {}
+    try { await fetch(`${API}/watcher/backfill`) } catch {}
     setState('done')
     setTimeout(() => setState('idle'), 3000)
   }

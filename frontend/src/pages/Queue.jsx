@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { API } from '../lib/api'
 import { timeAgo, timeUntil } from '../lib/time'
 import ScoreBadge from '../components/ScoreBadge'
 
@@ -76,7 +77,7 @@ function QueueCard({ item, onViewPost, onSent }) {
     if (sending) return
     setSending(true)
     try {
-      const res = await fetch(`http://localhost:8000/messages/${item.id}/send`, { method: 'POST' })
+      const res = await fetch(`${API}/messages/${item.id}/send`, { method: 'POST' })
       const data = await res.json()
       setResult(data)
       setTimeout(() => onSent?.(), 1500)
