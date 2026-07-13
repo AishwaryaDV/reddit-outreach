@@ -1,29 +1,28 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { API } from '../lib/api'
 import { timeAgo, timeUntil } from '../lib/time'
 import ScoreBadge from '../components/ScoreBadge'
 
+async function fetchQueue() {
+  const { data } = await supabase
+    .from('messages')
+    .select('*, posts(*)')
+    .eq('status', 'approved')
+    .order('send_after', { ascending: true })
+  return data ?? []
+}
+
 export default function Queue() {
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
-
-  async function load() {
-    const { data } = await supabase
-      .from('messages')
-      .select('*, posts(*)')
-      .eq('status', 'approved')
-      .order('send_after', { ascending: true })
-
-    setItems(data ?? [])
-    setLoading(false)
-  }
-
-  useEffect(() => {
-    load()
-  }, [])
+  const queryClient = useQueryClient()
+  const { data: items = [], isLoading, isFetching } = useQuery({
+    queryKey: ['queue'],
+    queryFn: fetchQueue,
+    refetchInterval: 30_000,
+  })
 
   return (
     <div>
@@ -34,9 +33,19 @@ export default function Queue() {
             {items.length} approved message{items.length !== 1 ? 's' : ''} waiting to send
           </p>
         </div>
+        <button
+          onClick={() => queryClient.invalidateQueries({ queryKey: ['queue'] })}
+          disabled={isFetching}
+          className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5"
+        >
+          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={isFetching ? 'animate-spin' : ''}>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Refresh
+        </button>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
           Loading queue...
         </div>
@@ -57,7 +66,7 @@ export default function Queue() {
               key={item.id}
               item={item}
               onViewPost={() => navigate(`/review/${item.post_id}`)}
-              onSent={() => setItems((prev) => prev.filter((i) => i.id !== item.id))}
+              onSent={() => queryClient.invalidateQueries({ queryKey: ['queue'] })}
             />
           ))}
         </div>
