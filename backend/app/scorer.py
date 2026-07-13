@@ -93,7 +93,9 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
         "draft": f"Saw your post and this looks right up my alley. I build React apps and MVPs for founders and small teams — here's my work: {_get_portfolio_url()}",
     }
 
-    # --- REAL SCORER (re-enable when quota resets) ---
+    # --- REAL SCORER (re-enable when ready) ---
+    # from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
+    #
     # recent_context = ""
     # if recent_drafts:
     #     recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
@@ -102,7 +104,7 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
     #
     # options = ClaudeAgentOptions(
     #     model="claude-haiku-4-5-20251001",
-    #     system_prompt=SYSTEM_PROMPT,
+    #     system_prompt=_build_system_prompt(),
     #     max_turns=1,
     #     allowed_tools=[],
     # )
