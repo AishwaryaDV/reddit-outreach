@@ -1,27 +1,29 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { timeAgo } from '../lib/time'
 import ScoreBadge from '../components/ScoreBadge'
 
+const OUTCOMES = ['', 'ignored', 'responded', 'hired', 'ongoing']
+
+async function fetchSent() {
+  const { data } = await supabase
+    .from('messages')
+    .select('*, posts(*)')
+    .in('status', ['sent', 'dry_sent'])
+    .order('sent_at', { ascending: false, nullsFirst: false })
+  return data ?? []
+}
+
 export default function Tracker() {
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
-
-  useEffect(() => {
-    async function load() {
-      const { data } = await supabase
-        .from('messages')
-        .select('*, posts(*)')
-        .in('status', ['sent', 'dry_sent'])
-        .order('sent_at', { ascending: false, nullsFirst: false })
-
-      setItems(data ?? [])
-      setLoading(false)
-    }
-    load()
-  }, [])
+  const queryClient = useQueryClient()
+  const { data: items = [], isLoading, isFetching } = useQuery({
+    queryKey: ['tracker'],
+    queryFn: fetchSent,
+    refetchInterval: 30_000,
+  })
 
   return (
     <div>
@@ -32,12 +34,24 @@ export default function Tracker() {
             {items.length} DM{items.length !== 1 ? 's' : ''} sent
           </p>
         </div>
-        <span className="text-xs px-2.5 py-1 rounded-full bg-slate-500/15 text-slate-500 border border-white/5">
-          Reply tracking in Phase 5
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['tracker'] })}
+            disabled={isFetching}
+            className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-slate-400 bg-white/5 hover:bg-white/8 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5"
+          >
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={isFetching ? 'animate-spin' : ''}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
+          <span className="text-xs px-2.5 py-1 rounded-full bg-slate-500/15 text-slate-500 border border-white/5">
+            Reply tracking in Phase 5
+          </span>
+        </div>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
           Loading history...
         </div>
@@ -58,6 +72,7 @@ export default function Tracker() {
               key={item.id}
               item={item}
               onViewPost={() => navigate(`/review/${item.post_id}`)}
+              onOutcomeChange={() => queryClient.invalidateQueries({ queryKey: ['tracker'] })}
             />
           ))}
         </div>
@@ -66,10 +81,21 @@ export default function Tracker() {
   )
 }
 
-function TrackerCard({ item, onViewPost }) {
+function TrackerCard({ item, onViewPost, onOutcomeChange }) {
   const post = item.posts
   const sentAt = item.sent_at ? new Date(item.sent_at) : null
   const isDry = item.status === 'dry_sent'
+  const [saving, setSaving] = useState(false)
+
+  async function handleOutcome(value) {
+    setSaving(true)
+    await supabase
+      .from('messages')
+      .update({ outcome: value || null })
+      .eq('id', item.id)
+    setSaving(false)
+    onOutcomeChange?.()
+  }
 
   return (
     <div className="bg-white/3 border border-white/8 rounded-xl p-4">
@@ -112,7 +138,23 @@ function TrackerCard({ item, onViewPost }) {
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-600 italic">No reply yet — reply tracking in Phase 5</span>
+        <div className="flex items-center gap-3">
+          <select
+            value={item.outcome || ''}
+            onChange={(e) => handleOutcome(e.target.value)}
+            disabled={saving}
+            className="text-xs bg-white/5 border border-white/10 text-slate-400 rounded-lg px-2 py-1 outline-none cursor-pointer"
+          >
+            <option value="">No outcome</option>
+            <option value="ignored">Ignored</option>
+            <option value="responded">Responded</option>
+            <option value="hired">Hired</option>
+            <option value="ongoing">Ongoing</option>
+          </select>
+          {item.outcome && (
+            <OutcomeBadge outcome={item.outcome} />
+          )}
+        </div>
         <a
           href={`https://reddit.com/comments/${post?.reddit_post_id}`}
           target="_blank"
@@ -123,5 +165,20 @@ function TrackerCard({ item, onViewPost }) {
         </a>
       </div>
     </div>
+  )
+}
+
+function OutcomeBadge({ outcome }) {
+  const styles = {
+    ignored:   { bg: 'bg-slate-500/15', color: 'text-slate-500' },
+    responded: { bg: 'bg-sky-500/15', color: 'text-sky-400' },
+    hired:     { bg: 'bg-emerald-500/15', color: 'text-emerald-400' },
+    ongoing:   { bg: 'bg-amber-500/15', color: 'text-amber-400' },
+  }
+  const s = styles[outcome] || styles.ignored
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full ${s.bg} ${s.color} capitalize`}>
+      {outcome}
+    </span>
   )
 }
