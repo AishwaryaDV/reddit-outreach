@@ -11,7 +11,7 @@ const ACCENT = '#ff4500'
 
 const TIME_FILTERS = [
   { label: 'Past hour', value: 'hour' },
-  { label: 'Today', value: 'today' },
+  { label: 'Past 24h', value: 'today' },
   { label: 'All time', value: 'all' },
 ]
 
@@ -247,7 +247,7 @@ export default function Feed() {
       {statusTab === 'search' ? (
         <div style={{ maxWidth: 520 }}>
           <p style={{ fontSize: 12, color: '#7a7a7a', marginBottom: 12, marginTop: 0 }}>
-            Search Reddit in real time — new matching posts are saved to your feed.
+            Search Reddit in real time — only hiring-related posts are saved to your feed.
           </p>
           <form onSubmit={handleLiveSearch} style={{ display: 'flex', gap: 8 }}>
             <input
