@@ -1,37 +1,24 @@
-import { useEffect, useState } from 'react'
-import { API } from '../lib/api'
+import { useState } from 'react'
 
 const ITEMS = [
   {
     key: 'reddit_karma',
     label: 'Reddit app registration',
     detail: 'Build karma to ~50+ on r/reactjs, r/webdev — needed for Phase 4 sending',
-    check: () => false,
   },
   {
     key: 'oracle',
     label: 'Oracle server',
     detail: 'Incident ticket raised — needed for Phase 6 deployment only',
-    check: () => false,
   },
 ]
 
 export default function SetupChecklist() {
-  const [status, setStatus] = useState(null)
   const [dismissed, setDismissed] = useState(
     () => JSON.parse(localStorage.getItem('checklist_dismissed') || '[]')
   )
 
-  useEffect(() => {
-    fetch(`${API}/status`)
-      .then((r) => r.json())
-      .then(setStatus)
-      .catch(() => setStatus({}))
-  }, [])
-
-  const pending = ITEMS.filter(
-    (item) => !item.check(status ?? {}) && !dismissed.includes(item.key)
-  )
+  const pending = ITEMS.filter((item) => !dismissed.includes(item.key))
 
   if (!pending.length) return null
 
