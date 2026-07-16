@@ -17,6 +17,13 @@ def post_exists(reddit_post_id: str) -> bool:
     return len(result.data) > 0
 
 
+def update_post_engagement(reddit_post_id: str, upvotes: int, comments: int):
+    get_client().table("posts").update({
+        "reddit_upvotes": upvotes,
+        "num_comments": comments,
+    }).eq("reddit_post_id", reddit_post_id).execute()
+
+
 def save_post(post_data: dict) -> str:
     result = get_client().table("posts").insert(post_data).execute()
     return result.data[0]["id"]

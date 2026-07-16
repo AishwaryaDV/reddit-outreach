@@ -7,7 +7,7 @@ from random import randint
 import httpx
 
 from app.config import SEARCH_TERMS, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX
-from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts, get_search_terms, get_setting
+from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts, get_search_terms, get_setting, update_post_engagement
 from app.scorer import score_and_draft
 from app.notifications import send_notification
 
@@ -215,6 +215,7 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
         if post.get("over_18", False):
             continue
         if post_exists(reddit_post_id):
+            update_post_engagement(reddit_post_id, post.get("score", 0), post.get("num_comments", 0))
             continue
 
         title = post.get("title", "")
