@@ -155,13 +155,13 @@ async def search_reddit(q: str):
     return {"status": "done", "term": q.strip(), "new_posts": count}
 
 
-@app.get("/watcher/run")
+@app.post("/watcher/run")
 async def trigger_watcher():
     _spawn(run_watcher())
     return {"status": "watcher triggered"}
 
 
-@app.get("/watcher/backfill")
+@app.post("/watcher/backfill")
 async def trigger_backfill():
     _spawn(run_watcher(time_filter="day"))
     return {"status": "backfill triggered — searching all terms for past 24h"}

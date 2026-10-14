@@ -602,7 +602,7 @@ function BackfillButton() {
   async function handleClick() {
     if (state !== 'idle') return
     setState('loading')
-    try { await fetch(`${API}/watcher/backfill`) } catch {}
+    try { await fetch(`${API}/watcher/backfill`, { method: 'POST' }) } catch {}
     setState('done')
     setTimeout(() => setState('idle'), 3000)
   }
