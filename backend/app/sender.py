@@ -88,15 +88,27 @@ def send_dm(message_id: str, post_id: str, recipient: str, body: str) -> dict:
         return {"sent": False, "dry_run": False, "reason": str(e)}
 
 
+# Max messages sent per 1-minute tick — spreads a backlog over several runs
+# instead of firing everything at once (anti-spam).
+AUTO_SEND_BATCH = 4
+
+
 def process_auto_sends():
-    """Called by scheduler — sends all approved messages past their send_after time."""
+    """Called by scheduler — sends messages whose review window has elapsed.
+
+    `pending` = the user never acted within the approval window, which the spec
+    treats as implicit consent to send. `approved` = the user explicitly approved.
+    Disapprove sets `cancelled`, which is excluded here.
+    """
     now = datetime.now(tz=timezone.utc).isoformat()
     result = (
         get_client()
         .table("messages")
         .select("id, post_id, final_message, draft, posts(author)")
-        .eq("status", "approved")
+        .in_("status", ["pending", "approved"])
         .lte("send_after", now)
+        .order("send_after")
+        .limit(AUTO_SEND_BATCH)
         .execute()
     )
 
