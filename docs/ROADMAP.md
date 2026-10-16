@@ -1,10 +1,21 @@
 # Roadmap — What Needs To Be Done
 
-**Last updated: 2026-10-14 | Branch: version1**
+**Last updated: 2026-10-16 | Branch: fix/open-bugs-sweep**
 
 Ordered by dependency. The July schema/config/URL/CORS fixes from the old roadmap are **done**
-(see STATUS.md) and have been removed from this list. User's stated plan: build everything out
-first; **auto-DM, real scoring, and deployment are the final steps.**
+(see STATUS.md). BUG-3 (auto-send) and BUG-5 (DM-twice guard) were fixed on branch
+`fix/open-bugs-sweep` (2026-10-16). User's stated plan: build everything out first;
+**auto-DM, real scoring, and deployment are the final steps.**
+
+> **AI Upgrade Spec (docs/reddit-outreach-ai-upgrade-spec.pdf, 2026-10-11).** The bigger
+> direction for this repo: turn it into a portfolio-grade AI pipeline — golden-dataset scorer
+> evals (precision/recall/F1, Spearman), structured Pydantic outputs, prompt versioning, an
+> `llm_calls` cost/latency table + `/metrics` page, an LLM-as-judge for drafts, guardrails
+> (allowlist/profile.yaml/prompt-injection), and replay-mode portability. Its order of work
+> starts with **Workstream 5a** (`llm_client.py` wrapper + replay mode + `llm_calls` logging).
+> **Model decision (confirmed by user 2026-10-16):** Claude Agent SDK = primary scorer,
+> Gemini (Flash, free tier) = fallback + CI + draft judge. This supersedes the old §3 below.
+> Spec also wants **auto-send opt-in and OFF by default** (see §1).
 
 ---
 
@@ -26,44 +37,58 @@ Account: `Upper-Vehicle2154`, karma now ~20.
 
 ---
 
-## 1. Auto-Send Logic (the product's core promise) — BUG-3
+## 1. Auto-Send Logic (the product's core promise) — BUG-3 ✅ DONE (needs a toggle)
 
-`process_auto_sends()` only queries `status=approved`. Messages are saved as `pending` and
-nothing transitions them, so nothing ever auto-sends. The UI countdown hits 0:00 and lies.
+**Fixed (ae5145c):** `process_auto_sends()` now includes `pending` past its `send_after`
+window, ordered by `send_after`, capped at `AUTO_SEND_BATCH=4` per run. The mechanism works.
 
-**Fix:**
-1. `sender.py` query → `.in_("status", ["pending", "approved"]).lte("send_after", now)`
-   (pending past its window = no intervention = send; Disapprove already sets `cancelled`).
-2. Add batch guardrails: max 3–4 per run, `await asyncio.sleep(randint(45,90))` between sends.
-
-**Decision needed from user:** confirm "pending past window → auto-send" is the intended
-behavior (vs. requiring an explicit approve). This changes the whole product behavior.
-
----
-
-## 2. Never-DM-the-same-author-twice guardrail — BUG-5
-
-No code checks author history before sending. Same person posting in 3 subreddits = 3 DMs.
-Single most likely thing to get the account reported.
-
-**Fix:** Before `send_dm`, query for any prior `sent` message joined to a post with the same
-`author`; skip + mark `cancelled` if found. Optionally also check at scoring time.
+**⚠️ Open decision — reconcile with the AI Upgrade Spec.** The spec (Workstream 4b) wants
+**human approval required by default; auto-send opt-in and OFF by default** (automated DMs can
+violate Reddit spam rules, and a reviewer of the repo will check this). My fix currently makes
+pending auto-send *unconditionally*. Recommended reconciliation: gate the pending branch behind
+an `auto_send_enabled` setting in `app_settings` (default `false`); the code path stays, the
+toggle controls it. Nothing actually sends today anyway (`DRY_RUN=true`), so no urgency — but
+decide before real sends. Remaining nice-to-have: `asyncio.sleep(randint(45,90))` between sends.
 
 ---
 
-## 3. Real Scorer (replace MOCK) — final step
+## 2. Never-DM-the-same-author-twice guardrail — BUG-5 ✅ DONE
 
-`scorer.py:~89` returns a hardcoded score 7. Real impl (claude-agent-sdk) is commented out.
-The Agent SDK spawns a CLI subprocess per call — too heavy at 14 terms × 50 posts / 10 min,
-and it burned the Claude Pro quota.
+**Fixed (dbfcec3):** `send_dm` now calls `_already_messaged(author, exclude_post_id)` — skips
+and marks the message `cancelled` if that author already has a `sent`/`dry_sent` post.
+Case-insensitive; covers both auto-send and manual send.
 
-**Fix:** Switch to the `anthropic` Python SDK (`pip install anthropic`,
-`client = anthropic.AsyncAnthropic()`, `model="claude-haiku-4-5-20251001"`, `max_tokens≈300`).
-Keep `_extract_and_validate()`. Add `ANTHROPIC_API_KEY` to `.env` and a `SCORER_MOCK=true`
-flag for pipeline testing. Remove `claude-agent-sdk` from requirements, add `anthropic`.
-~$0.001/post at Haiku prices.
+---
 
-**Decision needed from user:** confirm the SDK swap + get an API key at console.anthropic.com.
+## 3. Real Scorer + LLM layer (per AI Upgrade Spec) — final steps
+
+`scorer.py:~90` returns a hardcoded score 7 (`SCORER_MODE="mock"`). The real claude-agent-sdk
+impl is commented out below it.
+
+**Model decision (user-confirmed 2026-10-16):** keep **Claude Agent SDK (Haiku) as primary**,
+add **Gemini (Flash, free tier) as fallback** — *not* a swap to the `anthropic` API SDK (my
+earlier recommendation here was wrong; the spec keeps the Agent SDK / Claude Code login path so
+there's no API bill, just an API-equivalent `total_cost_usd` estimate). The old quota problem is
+solved by the spec's approach, not by switching SDKs: response caching, 50-post dev subsets, and
+a per-day quota guard that pauses scoring when hit.
+
+**Per the spec (do in this order):**
+1. **Workstream 5a** — `backend/app/llm_client.py` wraps every model call (score/draft/judge)
+   behind two backends: `claude_sdk` and `gemini`. Pipeline never imports either SDK directly.
+   Fallback: try Claude, on timeout/error/quota retry once then fall back to Gemini; log
+   `backend` + `fell_back`. Add `LLM_MODE=replay` (serves `evals/cache/`) vs `live`.
+2. **Workstream 3** — `llm_calls` Supabase table (tokens, cost, latency, parse_ok) + `/metrics`
+   page + quota guard. Everything after needs real cost numbers.
+3. **Structured outputs (2a)** — `ScoreResult` Pydantic schema via the SDK's `output_format` /
+   Gemini JSON-schema; split scoring and drafting into two calls. Replaces `_extract_and_validate`.
+4. **Prompts as files (2b)** — `prompts/scorer/v1.md`, `v2.md` + CHANGELOG; record
+   `prompt_version` + `model` on each saved post.
+5. Flip `SCORER_MODE` to the real backend once the wrapper is in.
+
+**Owner to-dos (from the spec, blocking parts of this):** create a free `GEMINI_API_KEY` in
+Google AI Studio + note the current free rate limits; add it to `backend/.env` and a GitHub
+Actions secret; ensure Claude Code is logged in on the backend host; label ~250 posts for the
+golden dataset. See the full spec PDF in `docs/`.
 
 ---
 
