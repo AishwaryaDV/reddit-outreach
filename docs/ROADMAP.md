@@ -31,9 +31,9 @@ either PRAW (`reddit.subreddit("all").search(...)`) or OAuth'd httpx against `oa
 Add `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD` to `.env`.
 Account: `Upper-Vehicle2154`, karma ~19 (3y-old verified account; registration needs no karma).
 
-> Reads work regardless of karma. **Sending** DMs is the risky part — 20 karma is still low for
-> DMing strangers (3y account age helps), so keep `DRY_RUN=true` and hold real sends for the final step (and warm the
-> account up more first).
+> Reads work regardless of karma. **Sending** DMs is the risky part — ~19 karma is still low for
+> DMing strangers (3y account age helps), so keep `DRY_RUN=true` and hold real sends for the final
+> step (and warm the account up more first).
 
 ---
 
@@ -131,9 +131,6 @@ Blocked on the same Reddit app as §0/sending. Schema already exists.
 
 ## 7. Nice-to-haves (not blocking)
 
-- Realtime INSERT handler respects the active time-filter/sort before prepending (currently
-  dedups by id but can show a post outside the current filter).
-- `/status` reports a hardcoded `"scorer": "claude-agent-sdk"` — make it reflect mock vs real.
 - Settings: message-template editor, subreddit watchlist (both can use `app_settings`).
 - Live search UX: it intentionally applies hiring filters; UI note added — consider a
   `skip_filters` option for arbitrary queries (BUG-25).
