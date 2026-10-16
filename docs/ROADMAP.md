@@ -29,10 +29,10 @@ until we authenticate. This also resolves itself into the Reddit-app work we nee
 registration). Move `fetch_posts()` from raw httpx on `search.json` to authenticated access —
 either PRAW (`reddit.subreddit("all").search(...)`) or OAuth'd httpx against `oauth.reddit.com`.
 Add `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD` to `.env`.
-Account: `Upper-Vehicle2154`, karma now ~20.
+Account: `Upper-Vehicle2154`, karma ~19 (3y-old verified account; registration needs no karma).
 
 > Reads work regardless of karma. **Sending** DMs is the risky part — 20 karma is still low for
-> DMing strangers, so keep `DRY_RUN=true` and hold real sends for the final step (and warm the
+> DMing strangers (3y account age helps), so keep `DRY_RUN=true` and hold real sends for the final step (and warm the
 > account up more first).
 
 ---
