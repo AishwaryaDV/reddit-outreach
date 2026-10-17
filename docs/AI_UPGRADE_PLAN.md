@@ -9,6 +9,13 @@ We work in **incremental phases, test each before moving on** — no fixed timel
 **Model decision (locked):** Claude Agent SDK (Haiku, via Claude Code login, no API key) =
 primary scorer/drafter. Gemini (Flash, free tier, `GEMINI_API_KEY`) = fallback + CI + draft judge.
 
+**Infra decision (locked 2026-10-17):** drop Supabase; self-host everything (DB, backend,
+frontend) on one Ubuntu server, like the other apps. DB = **self-hosted PostgreSQL**, backend
+access via **SQLAlchemy 2.0 async + Alembic**, frontend talks **only to the backend** (no DB
+client), live feed via **react-query polling** (not Realtime). This is Phase 0.5 below and runs
+before the AI phases, since everything after writes to the DB. It also structurally removes most
+of BUG-14 (no more anon-key writes from the browser).
+
 ---
 
 ## What changes, engineering-wise (before → after)
@@ -41,9 +48,34 @@ Phases 1–8 are the AI upgrade. Phase 0 (ingestion) and Phase 9 (deploy/securit
 - **Build:** move `fetch_posts()` from raw httpx on `search.json` to authenticated reads
   (PRAW `reddit.subreddit("all").search(...)` or OAuth'd httpx on `oauth.reddit.com`).
 - **Test:** watcher run returns real posts for the 10 search terms; no 403s.
-- **Done when:** a live watcher run saves new posts to Supabase.
+- **Done when:** a live watcher run saves new posts to the DB.
 - **Needs from you:** register the Reddit script app; `REDDIT_CLIENT_ID/SECRET/USERNAME/PASSWORD`
   in `.env`. *(Also pulls the ~100 fresh posts we want for the dataset — see Phase 2.)*
+
+### Phase 0.5 — De-Supabase: self-hosted Postgres + backend-only data access
+- **Goal:** remove the Supabase dependency entirely; move to self-hosted Postgres; frontend talks
+  only to the backend. **Decisions (2026-10-17):** SQLAlchemy 2.0 async + Alembic; react-query
+  polling replaces Realtime; done before the AI phases. Mirror offroute's server layout.
+- **Sub-steps (each testable on its own):**
+  - **0.5a DB foundation** — local Postgres (docker-compose) for dev; SQLAlchemy async
+    engine/session; models for `posts`, `messages`, `app_settings`, `search_terms` (+ `llm_calls`);
+    Alembic init + baseline migration. Backend boots against local PG.
+  - **0.5b Port the data layer** — rewrite `database.py` internals to SQLAlchemy, keeping the
+    existing function names so the rest of the code barely changes; proper async session handling.
+  - **0.5c Data migration** — `pg_dump` the existing Supabase DB → import into Postgres (one-time,
+    documented). Do it before Supabase idle-pauses again.
+  - **0.5d Backend endpoints for all frontend data** — posts feed (filters/pagination/delete),
+    message approve/cancel, search-terms CRUD, tracker outcome update. (These replace the
+    frontend's direct DB writes.)
+  - **0.5e Frontend cutover** — remove `@supabase/supabase-js`; replace every `supabase.from()`
+    call with `fetch` to the new endpoints; Realtime → react-query polling; drop `VITE_SUPABASE_*`.
+  - **0.5f Cleanup** — remove supabase deps; update `.env.example` (`DATABASE_URL`) + README;
+    verify the whole app end-to-end on local Postgres.
+- **Test:** full app runs locally with **zero** Supabase; existing data present; feed / review /
+  queue / tracker / settings all work.
+- **Done when:** no `supabase` imports remain; app runs on self-hosted Postgres; BUG-14's
+  browser-direct-write path is gone.
+- **Needs from you:** Docker (or a local Postgres) for dev; Postgres on the server later.
 
 ### Phase 1 — `llm_client.py` wrapper + replay + cost logging · the foundation
 - **Goal:** one chokepoint for every model call, so everything after can be measured and swapped.
@@ -54,7 +86,8 @@ Phases 1–8 are the AI upgrade. Phase 0 (ingestion) and Phase 9 (deploy/securit
     `backend` + `fell_back`.
   - `LLM_MODE=live` (default) vs `LLM_MODE=replay` (serves recorded responses from `evals/cache/`,
     calls no model).
-  - `llm_calls` Supabase table + a helper that writes one row per call (see SQL below).
+  - `llm_calls` table (added as an Alembic migration on the self-hosted Postgres — see schema
+    below) + a helper that writes one row per call.
   - Add `google-genai` to `requirements.txt`.
 - **Test:** score a handful of existing posts in live mode (Claude), force a failure and confirm
   Gemini fallback, run the same in replay mode with no network.
@@ -133,13 +166,27 @@ Phases 1–8 are the AI upgrade. Phase 0 (ingestion) and Phase 9 (deploy/securit
 - **Done when:** a fresh clone can `make demo` in replay mode with no accounts.
 
 ### Phase 9 — Security hardening + deployment (BUG-14, self-host)
-- **Build:** bearer-token auth on all non-health endpoints; Supabase RLS anon = SELECT only, route
-  mutations through the backend; rate limiting. Then self-host on Ubuntu + nginx (see ROADMAP §6).
-- **Done when:** deployed with auth, `DRY_RUN` set intentionally, watcher kept alive under systemd.
+- **Note:** Phase 0.5 already removes the anon-key / direct-browser-write risk (frontend only
+  talks to the backend now), so most of BUG-14 is handled structurally. What's left here:
+- **Build:** bearer-token auth on all non-health endpoints + rate limiting.
+- **Deploy (mirror offroute's `docs/new-server-setup.md`):**
+  - `apt install nginx postgresql postgresql-contrib python3-venv certbot python3-certbot-nginx`.
+  - Postgres **local on the server**: `CREATE DATABASE reddit_outreach; CREATE USER ...;`
+    `DATABASE_URL=postgresql+asyncpg://...@localhost:5432/reddit_outreach` (+ `_SYNC` psycopg2 for Alembic).
+  - Backend: `venv` + `pip install -r requirements.txt`, `alembic upgrade head`, **systemd**
+    `reddit-api.service` running `uvicorn app.main:app --host 127.0.0.1 --port 8000` (the APScheduler
+    watcher lives in this process, so systemd keeps it alive).
+  - Frontend (Vite SPA — simpler than offroute's Next.js): `npm run build` → nginx serves `dist/`
+    statically. No web service needed.
+  - **nginx** on one domain `reddit.aishwaryadv.space`: `/api/` → `127.0.0.1:8000`, `/` → `dist/`;
+    `certbot --nginx` for SSL.
+  - Claude: `claude auth login` as the server user (no API key); Gemini fallback covers lapses.
+  - Optional: GitHub deploy webhook → `git pull` + `pip install` + `alembic upgrade head` + restart.
+- **Done when:** deployed with auth, `DRY_RUN` set intentionally, watcher alive under systemd.
 
 ---
 
-## `llm_calls` table (run in Supabase SQL editor at Phase 1)
+## `llm_calls` table (Alembic migration at Phase 1; schema reference)
 
 ```sql
 create table if not exists llm_calls (
@@ -166,10 +213,11 @@ create index if not exists llm_calls_step_idx on llm_calls (step);
 
 ## Open bugs (2)
 - **BUG-0** — Reddit public JSON 403 → ingestion dead. Fixed in Phase 0 (needs Reddit creds).
-- **BUG-14** — no API auth + frontend writes via anon key. Fixed in Phase 9 (deploy).
+- **BUG-14** — no API auth + frontend writes via anon key. Direct-write path removed in Phase 0.5;
+  remaining backend auth + rate limiting in Phase 9 (deploy).
 
 ## Don'ts (from the spec)
 - No LangChain / heavy frameworks — plain SDK calls.
 - Don't tune prompts on the holdout.
-- Don't commit real Reddit usernames, API keys, or the Supabase service key.
+- Don't commit real Reddit usernames, API keys, or DB credentials.
 - Don't remove the cheap pre-filters — the cost tradeoff is part of the story.
