@@ -6,6 +6,10 @@ from app.database import get_setting
 
 logger = logging.getLogger(__name__)
 
+# Reported by GET /status. Flip to "claude-haiku-4-5" when the real scorer
+# below is enabled, so the dashboard reflects what's actually running.
+SCORER_MODE = "mock"
+
 
 def _get_portfolio_url():
     return get_setting("portfolio_url", PORTFOLIO_URL)

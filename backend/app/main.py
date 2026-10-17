@@ -12,6 +12,7 @@ from app.config import (
     CORS_ORIGINS,
 )
 from app.watcher import run_watcher, run_cleanup, get_last_run_at, search_term
+from app.scorer import SCORER_MODE
 from app.sender import process_auto_sends, send_dm
 from pydantic import BaseModel
 from app.database import get_client, get_setting, set_setting
@@ -68,7 +69,7 @@ def health():
 @app.get("/status")
 def status():
     return {
-        "scorer": "claude-agent-sdk",
+        "scorer": SCORER_MODE,
         "gmail_configured": bool(GMAIL_USER and GMAIL_APP_PASSWORD and NOTIFY_EMAILS),
         "watcher_interval_minutes": WATCHER_INTERVAL_MINUTES,
         "last_run_at": get_last_run_at(),
@@ -154,13 +155,13 @@ async def search_reddit(q: str):
     return {"status": "done", "term": q.strip(), "new_posts": count}
 
 
-@app.get("/watcher/run")
+@app.post("/watcher/run")
 async def trigger_watcher():
     _spawn(run_watcher())
     return {"status": "watcher triggered"}
 
 
-@app.get("/watcher/backfill")
+@app.post("/watcher/backfill")
 async def trigger_backfill():
     _spawn(run_watcher(time_filter="day"))
     return {"status": "backfill triggered — searching all terms for past 24h"}
