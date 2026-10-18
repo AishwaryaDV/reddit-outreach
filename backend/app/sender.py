@@ -9,7 +9,7 @@ from sqlalchemy import func, select, update
 from app.config import (
     REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET,
     REDDIT_USERNAME, REDDIT_PASSWORD,
-    DAILY_DM_CAP, DRY_RUN,
+    DAILY_DM_CAP, DRY_RUN, reddit_configured,
 )
 from app.database import get_setting
 from app.db import get_session_factory
@@ -38,7 +38,7 @@ def _get_reddit() -> praw.Reddit:
 
 
 def _credentials_present() -> bool:
-    return all([REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD])
+    return reddit_configured()
 
 
 async def _sent_today_count() -> int:
