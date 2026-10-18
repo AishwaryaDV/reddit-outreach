@@ -268,7 +268,7 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
         # SMTP is slow and blocking — keep it off the event loop. The enabled
         # check lives here (not in send_notification) so the thread never touches
         # the async DB.
-        if await get_setting("notifications_enabled", "true") == "true":
+        if await get_setting("notifications_enabled", "false") == "true":
             await asyncio.to_thread(
                 send_notification,
                 post={**post_data, "reddit_post_id": reddit_post_id},

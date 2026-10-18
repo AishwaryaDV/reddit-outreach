@@ -122,13 +122,13 @@ async def update_config(body: ConfigUpdate):
 
 @app.get("/notifications/status")
 async def notifications_status():
-    enabled = await get_setting("notifications_enabled", "true") == "true"
+    enabled = await get_setting("notifications_enabled", "false") == "true"
     return {"enabled": enabled}
 
 
 @app.post("/notifications/toggle")
 async def notifications_toggle():
-    current = await get_setting("notifications_enabled", "true")
+    current = await get_setting("notifications_enabled", "false")
     new_value = "false" if current == "true" else "true"
     await set_setting("notifications_enabled", new_value)
     return {"enabled": new_value == "true"}
