@@ -6,7 +6,7 @@ from random import randint
 
 import httpx
 
-from app.config import SEARCH_TERMS, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX
+from app.config import SEARCH_TERMS, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX, reddit_configured
 from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts, get_search_terms, get_setting, update_post_engagement
 from app.scorer import score_and_draft
 from app.notifications import send_notification
@@ -300,6 +300,9 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
 
 
 async def search_term(term: str) -> int:
+    if not reddit_configured():
+        logger.info("Reddit API not configured — live search skipped")
+        return 0
     recent_drafts = await get_recent_drafts(limit=5)
     seen: set = set()
     count = await process_term(term, recent_drafts, "day", seen)
@@ -311,6 +314,9 @@ _watcher_lock = asyncio.Lock()
 
 
 async def run_watcher(time_filter: str = "hour"):
+    if not reddit_configured():
+        logger.info("Reddit API not configured — watcher paused (no requests to Reddit until creds are set)")
+        return
     # Startup task, scheduler ticks, /watcher/run and /watcher/backfill can all
     # fire this — overlapping runs race the post_exists/save_post dedup check.
     if _watcher_lock.locked():

@@ -46,6 +46,13 @@ REDDIT_USERNAME = os.getenv("REDDIT_USERNAME", "")
 REDDIT_PASSWORD = os.getenv("REDDIT_PASSWORD", "")
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() != "false"
 
+
+def reddit_configured() -> bool:
+    """True when all four Reddit API credentials are present. Until then the
+    watcher makes no requests to Reddit — avoids pointless 403s that can get the
+    IP flagged by Reddit's network security."""
+    return all([REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD])
+
 # Cleanup
 POST_RETENTION_DAYS = 30
 
