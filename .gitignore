@@ -11,6 +11,9 @@ __pycache__/
 *.pyo
 .pytest_cache/
 
+# LLM replay cache (dev scratch; curated fixtures committed separately later)
+evals/cache/
+
 # Node
 node_modules/
 dist/

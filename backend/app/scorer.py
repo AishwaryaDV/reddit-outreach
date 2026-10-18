@@ -1,14 +1,15 @@
 import json
 import re
 import logging
-from app.config import PORTFOLIO_URL
+from app.config import PORTFOLIO_URL, LLM_MODE
 from app.database import get_setting
+from app.llm_client import complete, log_call
 
 logger = logging.getLogger(__name__)
 
-# Reported by GET /status. Flip to "claude-haiku-4-5" when the real scorer
-# below is enabled, so the dashboard reflects what's actually running.
-SCORER_MODE = "mock"
+PROMPT_VERSION = "v1"
+# Reported by GET /status.
+SCORER_MODE = "replay" if LLM_MODE == "replay" else "claude_sdk+gemini"
 
 
 async def _get_portfolio_url():
@@ -90,46 +91,30 @@ async def _build_system_prompt():
 
 
 async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None = None) -> dict | None:
-    # MOCK — swap back to real scorer once Claude quota resets
-    portfolio_url = await _get_portfolio_url()
-    return {
-        "score": 7,
-        "reason": "Mock score for pipeline testing — real scorer disabled",
-        "draft": f"Saw your post and this looks right up my alley. I build React apps and MVPs for founders and small teams — here's my work: {portfolio_url}",
-    }
+    """Score a post 1-10 and draft a DM. Routes through llm_client (Claude
+    primary within its rate budget, Gemini overflow) so it can never drain the
+    Claude Pro subscription. Returns the parsed result, or None if scoring is
+    paused or the response can't be parsed."""
+    # Kill switch — pause all LLM scoring instantly from Settings, no redeploy.
+    if (await get_setting("scoring_enabled", "true")) != "true":
+        logger.info("Scoring paused (scoring_enabled=false) — skipping")
+        return None
 
-    # --- REAL SCORER (re-enable when ready) ---
-    # from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
-    #
-    # recent_context = ""
-    # if recent_drafts:
-    #     recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
-    #
-    # user_message = f"Post title: {title}\n\nPost body: {body or '(no body)'}{recent_context}"
-    #
-    # options = ClaudeAgentOptions(
-    #     model="claude-haiku-4-5-20251001",
-    #     system_prompt=await _build_system_prompt(),
-    #     max_turns=1,
-    #     allowed_tools=[],
-    # )
-    #
-    # try:
-    #     text = ""
-    #     async for message in query(prompt=user_message, options=options):
-    #         if isinstance(message, AssistantMessage):
-    #             for block in message.content:
-    #                 if isinstance(block, TextBlock):
-    #                     text += block.text
-    #
-    #     if not text:
-    #         logger.warning("Agent SDK returned empty response")
-    #         return None
-    #
-    #     return _extract_and_validate(text)
-    # except Exception as e:
-    #     logger.error("Scorer error: %s", e)
-    #     return None
+    system_prompt = await _build_system_prompt()
+    recent_context = ""
+    if recent_drafts:
+        recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
+    user_message = f"Post title: {title}\n\nPost body: {body or '(no body)'}{recent_context}"
+
+    result = await complete("score", system_prompt, user_message)
+    parsed = _extract_and_validate(result.text) if result.text else None
+    await log_call("score", result, None, PROMPT_VERSION, parse_ok=parsed is not None)
+    if parsed is None:
+        logger.warning(
+            "Scorer: unparseable %s response%s",
+            result.backend, f" ({result.error})" if result.error else "",
+        )
+    return parsed
 
 
 def _extract_and_validate(text: str) -> dict | None:
