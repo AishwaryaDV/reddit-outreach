@@ -62,8 +62,10 @@ Phases 1–8 are the AI upgrade. Phase 0 (ingestion) and Phase 9 (deploy/securit
     Alembic init + baseline migration. Backend boots against local PG.
   - **0.5b Port the data layer** — rewrite `database.py` internals to SQLAlchemy, keeping the
     existing function names so the rest of the code barely changes; proper async session handling.
-  - **0.5c Data migration** — `pg_dump` the existing Supabase DB → import into Postgres (one-time,
-    documented). Do it before Supabase idle-pauses again.
+  - **0.5c Data re-seed** — `posts`/`messages` in Supabase are empty (the July data was purged by
+    the 30-day retention cleanup during our test runs). So there's nothing to `pg_dump` — just
+    re-seed the 14 `search_terms` (same as `config.SEARCH_TERMS`) + the 2 `app_settings`
+    (`daily_dm_cap=20`, `notifications_enabled=false`) into local Postgres. A few lines, no script.
   - **0.5d Backend endpoints for all frontend data** — posts feed (filters/pagination/delete),
     message approve/cancel, search-terms CRUD, tracker outcome update. (These replace the
     frontend's direct DB writes.)
@@ -101,8 +103,9 @@ Phases 1–8 are the AI upgrade. Phase 0 (ingestion) and Phase 9 (deploy/securit
     hard 3–6 range) + ~50 the pre-filters rejected → `evals/data/golden.jsonl`.
   - A `/label` dashboard page: one post at a time, opportunity/not + 1–10 + notes, keyboard-driven.
   - Freeze 40 as `evals/data/holdout.jsonl` (never used while tuning).
-- **Dataset note:** the current Supabase posts are months old. We start with those **plus ~100
-  fresh ones pulled after Phase 0**, so the set spans old and new.
+- **Dataset note:** the old Supabase posts are gone (empty tables — purged by retention). The
+  golden set is built **entirely from fresh posts pulled after Phase 0**, so registering the
+  Reddit app gates the labeling work.
 - **Test:** export runs; `/label` writes valid JSONL rows.
 - **Done when:** ~250 labeled (start with a ~50 sitting to get a first signal), holdout frozen.
 - **Needs from you:** the labeling itself (the one part only you can do; do it in sittings of 50).
