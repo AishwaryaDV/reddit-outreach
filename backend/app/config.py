@@ -3,10 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-
-# Self-hosted Postgres (replacing Supabase). Async driver for the app, sync for Alembic.
+# Self-hosted Postgres. Async driver for the app, sync for Alembic.
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql+asyncpg://reddit:reddit@localhost:5432/reddit_outreach"
 )

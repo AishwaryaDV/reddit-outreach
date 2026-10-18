@@ -1,6 +1,5 @@
 fastapi==0.136.1
 uvicorn==0.46.0
-supabase==2.29.0
 httpx==0.28.1
 claude-agent-sdk==0.1.72
 apscheduler==3.11.2
