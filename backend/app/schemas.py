@@ -1,0 +1,80 @@
+"""Pydantic request/response models for the API boundary.
+
+These replace the shapes the frontend used to read straight from Supabase, so
+the browser now talks only to the backend.
+"""
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
+
+
+class PostOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    reddit_post_id: str
+    subreddit: str | None
+    title: str | None
+    body: str | None
+    author: str | None
+    posted_at: datetime | None
+    detected_at: datetime
+    status: str
+    score: int | None
+    score_reason: str | None
+    num_comments: int
+    reddit_upvotes: int
+
+
+class MessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    post_id: UUID
+    draft: str | None
+    final_message: str | None
+    send_after: datetime | None
+    sent_at: datetime | None
+    status: str
+    created_at: datetime
+    reply_received: bool
+    replied_at: datetime | None
+    outcome: str | None
+
+
+class MessageWithPost(MessageOut):
+    # named `posts` to match what the frontend reads (item.posts)
+    posts: PostOut | None = None
+
+
+class PostsPage(BaseModel):
+    posts: list[PostOut]
+    total: int
+
+
+class SearchTermOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    term: str
+    active: bool
+    created_at: datetime
+
+
+# --- request bodies ---
+
+class ApproveIn(BaseModel):
+    final_message: str | None = None
+
+
+class OutcomeIn(BaseModel):
+    outcome: str | None = None
+
+
+class SearchTermIn(BaseModel):
+    term: str
+
+
+class SearchTermPatch(BaseModel):
+    active: bool
