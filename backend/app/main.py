@@ -15,7 +15,6 @@ from app.watcher import run_watcher, run_cleanup, get_last_run_at, search_term
 from app.scorer import SCORER_MODE
 from app.sender import process_auto_sends, send_dm
 from pydantic import BaseModel
-import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -223,11 +222,18 @@ async def list_posts(
         elif tab == "disapproved":
             conditions.append(Post.status == "cancelled")
 
-    clean = re.sub(r"[%_,().]", "", q.strip())
-    if clean:
-        pattern = f"%{clean}%"
+    term = q.strip()
+    if term:
+        # Escape LIKE wildcards so punctuation (., +, (), etc.) is searched literally
+        # instead of being stripped, while % and _ can't act as wildcards.
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
         conditions.append(
-            or_(Post.title.ilike(pattern), Post.subreddit.ilike(pattern), Post.author.ilike(pattern))
+            or_(
+                Post.title.ilike(pattern, escape="\\"),
+                Post.subreddit.ilike(pattern, escape="\\"),
+                Post.author.ilike(pattern, escape="\\"),
+            )
         )
 
     order = Post.posted_at.asc() if sort == "oldest" else Post.posted_at.desc()
