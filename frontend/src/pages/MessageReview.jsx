@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 import { timeAgo } from '../lib/time'
 import CustomSelect from '../components/CustomSelect'
 
@@ -53,18 +53,13 @@ export default function MessageReview() {
     offsetRef.current = 0
     hasMoreRef.current = true
     loadingRef.current = true
-    supabase
-      .from('posts')
-      .select('id, title, subreddit, author, posted_at, reddit_upvotes, num_comments, score, status')
-      .order('posted_at', { ascending: sortOrder === 'oldest' })
-      .range(0, 99)
-      .then(({ data }) => {
-        const rows = data ?? []
-        setPosts(rows)
-        offsetRef.current = rows.length
-        hasMoreRef.current = rows.length === 100
-        loadingRef.current = false
-      })
+    api(`/posts?tab=all&time=all&sort=${sortOrder}&offset=0&limit=100`).then(({ data }) => {
+      const rows = data?.posts ?? []
+      setPosts(rows)
+      offsetRef.current = rows.length
+      hasMoreRef.current = rows.length === 100
+      loadingRef.current = false
+    })
   }, [sortOrder])
 
   // Infinite scroll — load next 100 when sentinel enters viewport
@@ -75,19 +70,14 @@ export default function MessageReview() {
       if (!entry.isIntersecting || !hasMoreRef.current || loadingRef.current) return
       loadingRef.current = true
       setLoadingMore(true)
-      supabase
-        .from('posts')
-        .select('id, title, subreddit, author, posted_at, reddit_upvotes, num_comments, score, status')
-        .order('posted_at', { ascending: sortOrder === 'oldest' })
-        .range(offsetRef.current, offsetRef.current + 99)
-        .then(({ data }) => {
-          const rows = data ?? []
-          setPosts((prev) => [...prev, ...rows])
-          offsetRef.current += rows.length
-          hasMoreRef.current = rows.length === 100
-          loadingRef.current = false
-          setLoadingMore(false)
-        })
+      api(`/posts?tab=all&time=all&sort=${sortOrder}&offset=${offsetRef.current}&limit=100`).then(({ data }) => {
+        const rows = data?.posts ?? []
+        setPosts((prev) => [...prev, ...rows])
+        offsetRef.current += rows.length
+        hasMoreRef.current = rows.length === 100
+        loadingRef.current = false
+        setLoadingMore(false)
+      })
     })
     observer.observe(sentinel)
     return () => observer.disconnect()
@@ -102,15 +92,11 @@ export default function MessageReview() {
     setAction(null)
 
     async function load() {
-      const { data: postData } = await supabase
-        .from('posts').select('*').eq('id', id).single()
-      if (!postData) { navigate('/'); return }
+      const { ok, data: postData } = await api(`/posts/${id}`)
+      if (!ok || !postData) { navigate('/'); return }
       setPost(postData)
 
-      const { data: msgData } = await supabase
-        .from('messages').select('*').eq('post_id', id)
-        .order('created_at', { ascending: false })
-        .limit(1).maybeSingle()
+      const { data: msgData } = await api(`/posts/${id}/message`)
       if (msgData) { setMessage(msgData); setDraft(msgData.final_message ?? msgData.draft ?? '') }
       setLoading(false)
     }
@@ -127,8 +113,7 @@ export default function MessageReview() {
   async function handleApprove() {
     if (!message || action) return
     setAction('approving')
-    await supabase.from('messages').update({ status: 'approved', final_message: draft }).eq('id', message.id)
-    await supabase.from('posts').update({ status: 'approved' }).eq('id', id)
+    await api(`/messages/${message.id}/approve`, { method: 'POST', body: { final_message: draft } })
     setPosts((prev) => prev.map((p) => p.id === id ? { ...p, status: 'approved' } : p))
     goNext()
   }
@@ -136,8 +121,7 @@ export default function MessageReview() {
   async function handleDisapprove() {
     if (action) return
     setAction('disapproving')
-    if (message) await supabase.from('messages').update({ status: 'cancelled' }).eq('id', message.id)
-    await supabase.from('posts').update({ status: 'cancelled' }).eq('id', id)
+    if (message) await api(`/messages/${message.id}/cancel`, { method: 'POST' })
     setPosts((prev) => prev.map((p) => p.id === id ? { ...p, status: 'cancelled' } : p))
     goNext()
   }

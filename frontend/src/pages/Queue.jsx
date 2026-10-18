@@ -1,17 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '../lib/supabase'
-import { API } from '../lib/api'
+import { API, api } from '../lib/api'
 import { timeAgo, timeUntil } from '../lib/time'
 import ScoreBadge from '../components/ScoreBadge'
 
 async function fetchQueue() {
-  const { data } = await supabase
-    .from('messages')
-    .select('*, posts(*)')
-    .eq('status', 'approved')
-    .order('send_after', { ascending: true })
+  const { data } = await api('/queue')
   return data ?? []
 }
 
