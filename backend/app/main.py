@@ -15,7 +15,19 @@ from app.watcher import run_watcher, run_cleanup, get_last_run_at, search_term
 from app.scorer import SCORER_MODE
 from app.sender import process_auto_sends, send_dm
 from pydantic import BaseModel
-from app.database import get_client, get_setting, set_setting
+import uuid
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import delete, func, nulls_last, or_, select, update
+from sqlalchemy.orm import selectinload
+
+from app.database import get_setting, set_setting
+from app.db import get_session_factory
+from app.models import Message, Post, SearchTerm
+from app.schemas import (
+    ApproveIn, MessageOut, MessageWithPost, OutcomeIn,
+    PostOut, PostsPage, SearchTermIn, SearchTermOut, SearchTermPatch,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,7 +68,7 @@ app = FastAPI(title="Reddit Outreach API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -76,12 +88,12 @@ def status():
     }
 
 
-def _get_live_config():
+async def _get_live_config():
     return {
-        "portfolio_url": get_setting("portfolio_url", PORTFOLIO_URL),
-        "daily_dm_cap": int(get_setting("daily_dm_cap", str(DAILY_DM_CAP))),
-        "approval_window_min": int(get_setting("approval_window_min", str(APPROVAL_WINDOW_MIN))),
-        "approval_window_max": int(get_setting("approval_window_max", str(APPROVAL_WINDOW_MAX))),
+        "portfolio_url": await get_setting("portfolio_url", PORTFOLIO_URL),
+        "daily_dm_cap": int(await get_setting("daily_dm_cap", str(DAILY_DM_CAP))),
+        "approval_window_min": int(await get_setting("approval_window_min", str(APPROVAL_WINDOW_MIN))),
+        "approval_window_max": int(await get_setting("approval_window_max", str(APPROVAL_WINDOW_MAX))),
         "watcher_interval_minutes": WATCHER_INTERVAL_MINUTES,
         "post_retention_days": POST_RETENTION_DAYS,
         "gmail_configured": bool(GMAIL_USER and GMAIL_APP_PASSWORD and NOTIFY_EMAILS),
@@ -89,8 +101,8 @@ def _get_live_config():
 
 
 @app.get("/config")
-def get_config():
-    return _get_live_config()
+async def get_config():
+    return await _get_live_config()
 
 
 class ConfigUpdate(BaseModel):
@@ -99,52 +111,52 @@ class ConfigUpdate(BaseModel):
 
 
 @app.post("/config")
-def update_config(body: ConfigUpdate):
+async def update_config(body: ConfigUpdate):
     allowed = {"portfolio_url", "daily_dm_cap", "approval_window_min", "approval_window_max"}
     if body.key not in allowed:
         raise HTTPException(status_code=400, detail=f"Key '{body.key}' is not editable")
-    set_setting(body.key, body.value)
-    return _get_live_config()
+    await set_setting(body.key, body.value)
+    return await _get_live_config()
 
 
 @app.get("/notifications/status")
-def notifications_status():
-    enabled = get_setting("notifications_enabled", "true") == "true"
+async def notifications_status():
+    enabled = await get_setting("notifications_enabled", "false") == "true"
     return {"enabled": enabled}
 
 
 @app.post("/notifications/toggle")
-def notifications_toggle():
-    current = get_setting("notifications_enabled", "true")
+async def notifications_toggle():
+    current = await get_setting("notifications_enabled", "false")
     new_value = "false" if current == "true" else "true"
-    set_setting("notifications_enabled", new_value)
+    await set_setting("notifications_enabled", new_value)
     return {"enabled": new_value == "true"}
 
 
 @app.post("/messages/{message_id}/send")
 async def manual_send(message_id: str):
-    # .single() raises on zero rows — use maybe_single so a missing/already-sent
-    # message returns a proper 404 instead of a 500
-    result = (
-        get_client()
-        .table("messages")
-        .select("id, post_id, final_message, draft, posts(author)")
-        .eq("id", message_id)
-        .in_("status", ["approved", "pending"])
-        .maybe_single()
-        .execute()
-    )
-    row = result.data if result else None
-    if not row:
+    try:
+        mid = uuid.UUID(message_id)
+    except ValueError:
         raise HTTPException(status_code=404, detail="Message not found or not in sendable state")
 
-    author = (row.get("posts") or {}).get("author", "")
-    body = row.get("final_message") or row.get("draft") or ""
+    async with get_session_factory()() as session:
+        result = await session.execute(
+            select(Message.id, Message.post_id, Message.final_message, Message.draft, Post.author)
+            .join(Post, Message.post_id == Post.id)
+            .where(Message.id == mid, Message.status.in_(["approved", "pending"]))
+        )
+        row = result.first()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Message not found or not in sendable state")
+
+    author = row.author or ""
+    body = row.final_message or row.draft or ""
     if not author or not body:
         raise HTTPException(status_code=422, detail="Missing author or message body")
 
-    outcome = send_dm(row["id"], row["post_id"], author, body)
-    return outcome
+    return await send_dm(str(row.id), str(row.post_id), author, body)
 
 
 @app.get("/search/reddit")
@@ -165,3 +177,216 @@ async def trigger_watcher():
 async def trigger_backfill():
     _spawn(run_watcher(time_filter="day"))
     return {"status": "backfill triggered — searching all terms for past 24h"}
+
+
+# --- Data API (replaces the frontend's former direct Supabase access) ---
+
+PAGE_SIZE = 50
+
+
+def _uuid_or_404(value: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+def _message_with_post(m: Message) -> MessageWithPost:
+    return MessageWithPost(
+        **MessageOut.model_validate(m).model_dump(),
+        posts=PostOut.model_validate(m.post) if m.post else None,
+    )
+
+
+@app.get("/posts", response_model=PostsPage)
+async def list_posts(
+    tab: str = "all",
+    time: str = "today",
+    q: str = "",
+    sort: str = "newest",
+    offset: int = 0,
+    limit: int = PAGE_SIZE,
+):
+    now = datetime.now(tz=timezone.utc)
+    conditions = []
+    if tab == "drafts":
+        conditions.append(Post.status == "drafted")
+        conditions.append(Post.detected_at < now - timedelta(days=1))
+    else:
+        if time == "hour":
+            conditions.append(Post.detected_at >= now - timedelta(hours=1))
+        elif time == "today":
+            conditions.append(Post.detected_at >= now - timedelta(days=1))
+        if tab == "approved":
+            conditions.append(Post.status.in_(["approved", "sent", "dry_sent"]))
+        elif tab == "disapproved":
+            conditions.append(Post.status == "cancelled")
+
+    term = q.strip()
+    if term:
+        # Escape LIKE wildcards so punctuation (., +, (), etc.) is searched literally
+        # instead of being stripped, while % and _ can't act as wildcards.
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        conditions.append(
+            or_(
+                Post.title.ilike(pattern, escape="\\"),
+                Post.subreddit.ilike(pattern, escape="\\"),
+                Post.author.ilike(pattern, escape="\\"),
+            )
+        )
+
+    order = Post.posted_at.asc() if sort == "oldest" else Post.posted_at.desc()
+    async with get_session_factory()() as session:
+        total = await session.scalar(select(func.count(Post.id)).where(*conditions))
+        result = await session.execute(
+            select(Post).where(*conditions).order_by(order).offset(offset).limit(limit)
+        )
+        posts = result.scalars().all()
+    return PostsPage(posts=[PostOut.model_validate(p) for p in posts], total=total or 0)
+
+
+@app.get("/posts/{post_id}", response_model=PostOut)
+async def get_post(post_id: str):
+    pid = _uuid_or_404(post_id)
+    async with get_session_factory()() as session:
+        post = await session.get(Post, pid)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return post
+
+
+@app.get("/posts/{post_id}/message", response_model=MessageOut | None)
+async def get_post_message(post_id: str):
+    pid = _uuid_or_404(post_id)
+    async with get_session_factory()() as session:
+        result = await session.execute(
+            select(Message)
+            .where(Message.post_id == pid)
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+
+@app.delete("/posts/{post_id}")
+async def delete_post(post_id: str):
+    pid = _uuid_or_404(post_id)
+    async with get_session_factory()() as session:
+        await session.execute(delete(Post).where(Post.id == pid))  # messages cascade via FK
+        await session.commit()
+    return {"deleted": True}
+
+
+@app.post("/messages/{message_id}/approve")
+async def approve_message(message_id: str, body: ApproveIn):
+    mid = _uuid_or_404(message_id)
+    async with get_session_factory()() as session:
+        msg = await session.get(Message, mid)
+        if msg is None:
+            raise HTTPException(status_code=404, detail="Message not found")
+        msg.status = "approved"
+        if body.final_message is not None:
+            msg.final_message = body.final_message
+        await session.execute(update(Post).where(Post.id == msg.post_id).values(status="approved"))
+        await session.commit()
+    return {"status": "approved"}
+
+
+@app.post("/posts/{post_id}/cancel")
+async def cancel_post(post_id: str):
+    # Disapprove is a post-level action: cancel the post and any messages it has,
+    # so it works even for a post with no draft/message.
+    pid = _uuid_or_404(post_id)
+    async with get_session_factory()() as session:
+        post = await session.get(Post, pid)
+        if post is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+        post.status = "cancelled"
+        await session.execute(update(Message).where(Message.post_id == pid).values(status="cancelled"))
+        await session.commit()
+    return {"status": "cancelled"}
+
+
+@app.post("/messages/{message_id}/outcome")
+async def set_message_outcome(message_id: str, body: OutcomeIn):
+    mid = _uuid_or_404(message_id)
+    async with get_session_factory()() as session:
+        result = await session.execute(
+            update(Message).where(Message.id == mid).values(outcome=body.outcome or None)
+        )
+        await session.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return {"outcome": body.outcome or None}
+
+
+@app.get("/queue", response_model=list[MessageWithPost])
+async def get_queue():
+    async with get_session_factory()() as session:
+        result = await session.execute(
+            select(Message)
+            .where(Message.status == "approved")
+            .order_by(Message.send_after.asc())
+            .options(selectinload(Message.post))
+        )
+        return [_message_with_post(m) for m in result.scalars().all()]
+
+
+@app.get("/tracker", response_model=list[MessageWithPost])
+async def get_tracker():
+    async with get_session_factory()() as session:
+        result = await session.execute(
+            select(Message)
+            .where(Message.status.in_(["sent", "dry_sent"]))
+            .order_by(nulls_last(Message.sent_at.desc()))
+            .options(selectinload(Message.post))
+        )
+        return [_message_with_post(m) for m in result.scalars().all()]
+
+
+@app.get("/search-terms", response_model=list[SearchTermOut])
+async def list_search_terms():
+    async with get_session_factory()() as session:
+        result = await session.execute(select(SearchTerm).order_by(SearchTerm.created_at.asc()))
+        return result.scalars().all()
+
+
+@app.post("/search-terms", response_model=SearchTermOut, status_code=201)
+async def add_search_term(body: SearchTermIn):
+    term = body.term.strip().lower()
+    if not term:
+        raise HTTPException(status_code=400, detail="Term cannot be empty")
+    async with get_session_factory()() as session:
+        exists = await session.scalar(select(SearchTerm.id).where(SearchTerm.term == term))
+        if exists:
+            raise HTTPException(status_code=409, detail="Term already exists")
+        st = SearchTerm(term=term, active=True)
+        session.add(st)
+        await session.flush()
+        await session.refresh(st)
+        out = SearchTermOut.model_validate(st)
+        await session.commit()
+    return out
+
+
+@app.patch("/search-terms/{term_id}", response_model=SearchTermOut)
+async def update_search_term(term_id: str, body: SearchTermPatch):
+    tid = _uuid_or_404(term_id)
+    async with get_session_factory()() as session:
+        st = await session.get(SearchTerm, tid)
+        if st is None:
+            raise HTTPException(status_code=404, detail="Search term not found")
+        st.active = body.active
+        await session.commit()
+        await session.refresh(st)
+        return SearchTermOut.model_validate(st)
+
+
+@app.delete("/search-terms/{term_id}")
+async def delete_search_term(term_id: str):
+    tid = _uuid_or_404(term_id)
+    async with get_session_factory()() as session:
+        await session.execute(delete(SearchTerm).where(SearchTerm.id == tid))
+        await session.commit()
+    return {"deleted": True}

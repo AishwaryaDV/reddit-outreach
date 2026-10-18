@@ -1,18 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 import { timeAgo } from '../lib/time'
 import ScoreBadge from '../components/ScoreBadge'
 
 const OUTCOMES = ['', 'ignored', 'responded', 'hired', 'ongoing']
 
 async function fetchSent() {
-  const { data } = await supabase
-    .from('messages')
-    .select('*, posts(*)')
-    .in('status', ['sent', 'dry_sent'])
-    .order('sent_at', { ascending: false, nullsFirst: false })
+  const { data } = await api('/tracker')
   return data ?? []
 }
 
@@ -89,10 +85,7 @@ function TrackerCard({ item, onViewPost, onOutcomeChange }) {
 
   async function handleOutcome(value) {
     setSaving(true)
-    await supabase
-      .from('messages')
-      .update({ outcome: value || null })
-      .eq('id', item.id)
+    await api(`/messages/${item.id}/outcome`, { method: 'POST', body: { outcome: value || null } })
     setSaving(false)
     onOutcomeChange?.()
   }

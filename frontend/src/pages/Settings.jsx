@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
-import { API } from '../lib/api'
+import { API, api } from '../lib/api'
 
 export default function Settings() {
   return (
@@ -89,27 +88,21 @@ function SearchTermsSection() {
   }, [])
 
   async function load() {
-    const { data } = await supabase
-      .from('search_terms')
-      .select('*')
-      .order('created_at', { ascending: true })
+    const { data } = await api('/search-terms')
     setTerms(data ?? [])
     setLoading(false)
   }
 
   async function handleToggle(term) {
-    const { error: dbError } = await supabase
-      .from('search_terms')
-      .update({ active: !term.active })
-      .eq('id', term.id)
-    if (dbError) return
+    const { ok } = await api(`/search-terms/${term.id}`, { method: 'PATCH', body: { active: !term.active } })
+    if (!ok) return
     setTerms((prev) =>
       prev.map((t) => (t.id === term.id ? { ...t, active: !t.active } : t))
     )
   }
 
   async function handleDelete(id) {
-    await supabase.from('search_terms').delete().eq('id', id)
+    await api(`/search-terms/${id}`, { method: 'DELETE' })
     setTerms((prev) => prev.filter((t) => t.id !== id))
   }
 
@@ -123,13 +116,9 @@ function SearchTermsSection() {
     }
     setAdding(true)
     setError('')
-    const { data, error: dbError } = await supabase
-      .from('search_terms')
-      .insert({ term: trimmed, active: true })
-      .select()
-      .single()
-    if (dbError) {
-      setError('Failed to add term')
+    const { ok, status, data } = await api('/search-terms', { method: 'POST', body: { term: trimmed } })
+    if (!ok) {
+      setError(status === 409 ? 'Term already exists' : 'Failed to add term')
     } else {
       setTerms((prev) => [...prev, data])
       setNewTerm('')

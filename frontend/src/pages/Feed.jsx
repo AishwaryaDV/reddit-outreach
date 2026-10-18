@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { API } from '../lib/api'
+import { API, api } from '../lib/api'
 import { timeAgo } from '../lib/time'
 import SetupChecklist from '../components/SetupChecklist'
 import CustomSelect from '../components/CustomSelect'
@@ -44,12 +43,6 @@ function subColor(sub) {
   return colors[Math.abs(h) % colors.length]
 }
 
-function filterCutoff(value) {
-  const now = new Date()
-  if (value === 'hour') return new Date(now - 60 * 60 * 1000).toISOString()
-  return new Date(now - 24 * 60 * 60 * 1000).toISOString()
-}
-
 export default function Feed() {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -77,32 +70,13 @@ export default function Feed() {
 
   async function fetchPosts(time, tab, searchQuery, currentPage, sort) {
     setLoading(true)
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-
-    let query = supabase
-      .from('posts')
-      .select('*', { count: 'exact' })
-      .order('posted_at', { ascending: sort === 'oldest' })
-
-    if (tab === 'drafts') {
-      query = query.eq('status', 'drafted').lt('detected_at', oneDayAgo)
-    } else {
-      if (time !== 'all') query = query.gte('detected_at', filterCutoff(time))
-      if (tab === 'approved') query = query.in('status', ['approved', 'sent', 'dry_sent'])
-      else if (tab === 'disapproved') query = query.eq('status', 'cancelled')
-    }
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().replace(/[,().%]/g, '')
-      if (q) query = query.or(`title.ilike.%${q}%,subreddit.ilike.%${q}%,author.ilike.%${q}%`)
-    }
-
-    const from = currentPage * PAGE_SIZE
-    query = query.range(from, from + PAGE_SIZE - 1)
-
-    const { data, count } = await query
-    setPosts(data ?? [])
-    setTotal(count ?? 0)
+    const params = new URLSearchParams({
+      tab, time, q: searchQuery.trim(), sort,
+      offset: String(currentPage * PAGE_SIZE), limit: String(PAGE_SIZE),
+    })
+    const { data } = await api(`/posts?${params}`)
+    setPosts(data?.posts ?? [])
+    setTotal(data?.total ?? 0)
     setLoading(false)
   }
 
@@ -111,26 +85,15 @@ export default function Feed() {
   useEffect(() => {
     if (statusTab === 'search') return
     fetchPosts(timeFilter, statusTab, search, page, sortOrder)
-
-    const channel = supabase
-      .channel('posts-feed')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, (payload) => {
-        if (statusTab === 'all' && page === 0 && !search && sortOrder === 'newest') {
-          setPosts((prev) => {
-            if (prev.some((p) => p.id === payload.new.id)) return prev
-            return [payload.new, ...prev].slice(0, PAGE_SIZE)
-          })
-          setTotal((prev) => prev + 1)
-        }
-      })
-      .subscribe()
-
-    return () => supabase.removeChannel(channel)
+    // Poll for new posts (replaces Supabase Realtime; watcher runs every 10 min)
+    const interval = setInterval(() => {
+      fetchPosts(timeFilter, statusTab, search, page, sortOrder)
+    }, 30000)
+    return () => clearInterval(interval)
   }, [timeFilter, statusTab, search, page, sortOrder])
 
   async function handleDelete(postId) {
-    await supabase.from('messages').delete().eq('post_id', postId)
-    await supabase.from('posts').delete().eq('id', postId)
+    await api(`/posts/${postId}`, { method: 'DELETE' })
     setPosts((prev) => prev.filter((p) => p.id !== postId))
     setTotal((prev) => Math.max(0, prev - 1))
     setDeleteConfirm(null)

@@ -214,8 +214,8 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
             continue
         if post.get("over_18", False):
             continue
-        if post_exists(reddit_post_id):
-            update_post_engagement(reddit_post_id, post.get("score", 0), post.get("num_comments", 0))
+        if await post_exists(reddit_post_id):
+            await update_post_engagement(reddit_post_id, post.get("score", 0), post.get("num_comments", 0))
             continue
 
         title = post.get("title", "")
@@ -233,7 +233,7 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
         if is_obvious_skip(title, body, subreddit, author):
             continue
         created_utc = post.get("created_utc", 0)
-        posted_at = datetime.fromtimestamp(created_utc, tz=timezone.utc).isoformat()
+        posted_at = datetime.fromtimestamp(created_utc, tz=timezone.utc)
 
         result = await score_and_draft(title, body, recent_drafts)
 
@@ -262,27 +262,29 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
             "reddit_upvotes": post.get("score", 0),
         }
 
-        post_id = save_post(post_data)
+        post_id = await save_post(post_data)
         new_count += 1
 
-        # SMTP is slow and blocking — keep it off the event loop
-        await asyncio.to_thread(
-            send_notification,
-            post={**post_data, "reddit_post_id": reddit_post_id},
-            score=score,
-            reason=reason,
-            draft=draft,
-        )
+        # SMTP is slow and blocking — keep it off the event loop. The enabled
+        # check lives here (not in send_notification) so the thread never touches
+        # the async DB.
+        if await get_setting("notifications_enabled", "false") == "true":
+            await asyncio.to_thread(
+                send_notification,
+                post={**post_data, "reddit_post_id": reddit_post_id},
+                score=score,
+                reason=reason,
+                draft=draft,
+            )
 
         if draft:
-            window_min = int(get_setting("approval_window_min", str(APPROVAL_WINDOW_MIN)))
-            window_max = int(get_setting("approval_window_max", str(APPROVAL_WINDOW_MAX)))
-            send_after = (
-                datetime.now(tz=timezone.utc)
-                + timedelta(minutes=randint(window_min, window_max))
-            ).isoformat()
+            window_min = int(await get_setting("approval_window_min", str(APPROVAL_WINDOW_MIN)))
+            window_max = int(await get_setting("approval_window_max", str(APPROVAL_WINDOW_MAX)))
+            send_after = datetime.now(tz=timezone.utc) + timedelta(
+                minutes=randint(window_min, window_max)
+            )
 
-            save_message({
+            await save_message({
                 "post_id": post_id,
                 "draft": draft,
                 "send_after": send_after,
@@ -298,7 +300,7 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
 
 
 async def search_term(term: str) -> int:
-    recent_drafts = get_recent_drafts(limit=5)
+    recent_drafts = await get_recent_drafts(limit=5)
     seen: set = set()
     count = await process_term(term, recent_drafts, "day", seen)
     logger.info("Live search '%s' — %d new post(s) saved", term, count or 0)
@@ -317,10 +319,10 @@ async def run_watcher(time_filter: str = "hour"):
 
     async with _watcher_lock:
         logger.info("Watcher run started (filter: %s)", time_filter)
-        recent_drafts = get_recent_drafts(limit=5)
+        recent_drafts = await get_recent_drafts(limit=5)
         seen_author_titles: set = set()
 
-        db_terms = get_search_terms()
+        db_terms = await get_search_terms()
         if db_terms is None:
             active_terms = SEARCH_TERMS
             logger.info("Using %d search term(s) from config (DB unavailable)", len(active_terms))
@@ -344,7 +346,7 @@ async def run_watcher(time_filter: str = "hour"):
         logger.info("Watcher run complete")
 
 
-def run_cleanup():
-    deleted = purge_old_posts()
+async def run_cleanup():
+    deleted = await purge_old_posts()
     if deleted:
         logger.info("Cleanup: purged %d stale post(s)", deleted)
