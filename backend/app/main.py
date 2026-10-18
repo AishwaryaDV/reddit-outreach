@@ -15,7 +15,13 @@ from app.watcher import run_watcher, run_cleanup, get_last_run_at, search_term
 from app.scorer import SCORER_MODE
 from app.sender import process_auto_sends, send_dm
 from pydantic import BaseModel
-from app.database import get_client, get_setting, set_setting
+import uuid
+
+from sqlalchemy import select
+
+from app.database import get_setting, set_setting
+from app.db import get_session_factory
+from app.models import Message, Post
 
 logging.basicConfig(
     level=logging.INFO,
@@ -76,12 +82,12 @@ def status():
     }
 
 
-def _get_live_config():
+async def _get_live_config():
     return {
-        "portfolio_url": get_setting("portfolio_url", PORTFOLIO_URL),
-        "daily_dm_cap": int(get_setting("daily_dm_cap", str(DAILY_DM_CAP))),
-        "approval_window_min": int(get_setting("approval_window_min", str(APPROVAL_WINDOW_MIN))),
-        "approval_window_max": int(get_setting("approval_window_max", str(APPROVAL_WINDOW_MAX))),
+        "portfolio_url": await get_setting("portfolio_url", PORTFOLIO_URL),
+        "daily_dm_cap": int(await get_setting("daily_dm_cap", str(DAILY_DM_CAP))),
+        "approval_window_min": int(await get_setting("approval_window_min", str(APPROVAL_WINDOW_MIN))),
+        "approval_window_max": int(await get_setting("approval_window_max", str(APPROVAL_WINDOW_MAX))),
         "watcher_interval_minutes": WATCHER_INTERVAL_MINUTES,
         "post_retention_days": POST_RETENTION_DAYS,
         "gmail_configured": bool(GMAIL_USER and GMAIL_APP_PASSWORD and NOTIFY_EMAILS),
@@ -89,8 +95,8 @@ def _get_live_config():
 
 
 @app.get("/config")
-def get_config():
-    return _get_live_config()
+async def get_config():
+    return await _get_live_config()
 
 
 class ConfigUpdate(BaseModel):
@@ -99,52 +105,52 @@ class ConfigUpdate(BaseModel):
 
 
 @app.post("/config")
-def update_config(body: ConfigUpdate):
+async def update_config(body: ConfigUpdate):
     allowed = {"portfolio_url", "daily_dm_cap", "approval_window_min", "approval_window_max"}
     if body.key not in allowed:
         raise HTTPException(status_code=400, detail=f"Key '{body.key}' is not editable")
-    set_setting(body.key, body.value)
-    return _get_live_config()
+    await set_setting(body.key, body.value)
+    return await _get_live_config()
 
 
 @app.get("/notifications/status")
-def notifications_status():
-    enabled = get_setting("notifications_enabled", "true") == "true"
+async def notifications_status():
+    enabled = await get_setting("notifications_enabled", "true") == "true"
     return {"enabled": enabled}
 
 
 @app.post("/notifications/toggle")
-def notifications_toggle():
-    current = get_setting("notifications_enabled", "true")
+async def notifications_toggle():
+    current = await get_setting("notifications_enabled", "true")
     new_value = "false" if current == "true" else "true"
-    set_setting("notifications_enabled", new_value)
+    await set_setting("notifications_enabled", new_value)
     return {"enabled": new_value == "true"}
 
 
 @app.post("/messages/{message_id}/send")
 async def manual_send(message_id: str):
-    # .single() raises on zero rows — use maybe_single so a missing/already-sent
-    # message returns a proper 404 instead of a 500
-    result = (
-        get_client()
-        .table("messages")
-        .select("id, post_id, final_message, draft, posts(author)")
-        .eq("id", message_id)
-        .in_("status", ["approved", "pending"])
-        .maybe_single()
-        .execute()
-    )
-    row = result.data if result else None
-    if not row:
+    try:
+        mid = uuid.UUID(message_id)
+    except ValueError:
         raise HTTPException(status_code=404, detail="Message not found or not in sendable state")
 
-    author = (row.get("posts") or {}).get("author", "")
-    body = row.get("final_message") or row.get("draft") or ""
+    async with get_session_factory()() as session:
+        result = await session.execute(
+            select(Message.id, Message.post_id, Message.final_message, Message.draft, Post.author)
+            .join(Post, Message.post_id == Post.id)
+            .where(Message.id == mid, Message.status.in_(["approved", "pending"]))
+        )
+        row = result.first()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Message not found or not in sendable state")
+
+    author = row.author or ""
+    body = row.final_message or row.draft or ""
     if not author or not body:
         raise HTTPException(status_code=422, detail="Missing author or message body")
 
-    outcome = send_dm(row["id"], row["post_id"], author, body)
-    return outcome
+    return await send_dm(str(row.id), str(row.post_id), author, body)
 
 
 @app.get("/search/reddit")
