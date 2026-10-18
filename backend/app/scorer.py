@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 SCORER_MODE = "mock"
 
 
-def _get_portfolio_url():
-    return get_setting("portfolio_url", PORTFOLIO_URL)
+async def _get_portfolio_url():
+    return await get_setting("portfolio_url", PORTFOLIO_URL)
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are a filter for a personal Reddit job outreach tool. The owner is a freelance fullstack developer (3 years experience, React specialist, also does Node/backend, MVP builds, web apps).
@@ -85,16 +85,17 @@ Return ONLY valid JSON in this exact format, no other text:
 }}"""
 
 
-def _build_system_prompt():
-    return SYSTEM_PROMPT_TEMPLATE.format(portfolio_url=_get_portfolio_url())
+async def _build_system_prompt():
+    return SYSTEM_PROMPT_TEMPLATE.format(portfolio_url=await _get_portfolio_url())
 
 
 async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None = None) -> dict | None:
     # MOCK — swap back to real scorer once Claude quota resets
+    portfolio_url = await _get_portfolio_url()
     return {
         "score": 7,
         "reason": "Mock score for pipeline testing — real scorer disabled",
-        "draft": f"Saw your post and this looks right up my alley. I build React apps and MVPs for founders and small teams — here's my work: {_get_portfolio_url()}",
+        "draft": f"Saw your post and this looks right up my alley. I build React apps and MVPs for founders and small teams — here's my work: {portfolio_url}",
     }
 
     # --- REAL SCORER (re-enable when ready) ---
@@ -108,7 +109,7 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
     #
     # options = ClaudeAgentOptions(
     #     model="claude-haiku-4-5-20251001",
-    #     system_prompt=_build_system_prompt(),
+    #     system_prompt=await _build_system_prompt(),
     #     max_turns=1,
     #     allowed_tools=[],
     # )
