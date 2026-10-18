@@ -32,8 +32,8 @@ class Post(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'new'"))
     score: Mapped[int | None] = mapped_column(Integer)
     score_reason: Mapped[str | None] = mapped_column(Text)
-    num_comments: Mapped[int | None] = mapped_column(Integer, server_default=text("0"))
-    reddit_upvotes: Mapped[int | None] = mapped_column(Integer, server_default=text("0"))
+    num_comments: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    reddit_upvotes: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
 
     messages: Mapped[list[Message]] = relationship(
         back_populates="post", cascade="all, delete-orphan"
