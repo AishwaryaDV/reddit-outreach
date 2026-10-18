@@ -121,7 +121,7 @@ export default function MessageReview() {
   async function handleDisapprove() {
     if (action) return
     setAction('disapproving')
-    if (message) await api(`/messages/${message.id}/cancel`, { method: 'POST' })
+    await api(`/posts/${id}/cancel`, { method: 'POST' })
     setPosts((prev) => prev.map((p) => p.id === id ? { ...p, status: 'cancelled' } : p))
     goNext()
   }

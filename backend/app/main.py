@@ -287,15 +287,17 @@ async def approve_message(message_id: str, body: ApproveIn):
     return {"status": "approved"}
 
 
-@app.post("/messages/{message_id}/cancel")
-async def cancel_message(message_id: str):
-    mid = _uuid_or_404(message_id)
+@app.post("/posts/{post_id}/cancel")
+async def cancel_post(post_id: str):
+    # Disapprove is a post-level action: cancel the post and any messages it has,
+    # so it works even for a post with no draft/message.
+    pid = _uuid_or_404(post_id)
     async with get_session_factory()() as session:
-        msg = await session.get(Message, mid)
-        if msg is None:
-            raise HTTPException(status_code=404, detail="Message not found")
-        msg.status = "cancelled"
-        await session.execute(update(Post).where(Post.id == msg.post_id).values(status="cancelled"))
+        post = await session.get(Post, pid)
+        if post is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+        post.status = "cancelled"
+        await session.execute(update(Message).where(Message.post_id == pid).values(status="cancelled"))
         await session.commit()
     return {"status": "cancelled"}
 
