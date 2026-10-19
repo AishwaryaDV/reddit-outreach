@@ -262,6 +262,7 @@ def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = ""
 async def process_term(term: str, recent_drafts: list[str], time_filter: str = "hour", seen_author_titles: set | None = None):
     posts = await fetch_posts(term, time_filter)
     new_count = 0
+    reject_count = 0
 
     for post in posts:
         reddit_post_id = post.get("id")
@@ -302,6 +303,24 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
         draft = result.get("draft", "")
 
         if score <= 2:
+            # Phase 11 — persist rejects for audit (no draft, message, or
+            # notification). Lets us answer "did we miss a lead?" by scanning the
+            # Rejected tab instead of re-running the LLM; auto-purged by the
+            # 30-day retention sweep.
+            await save_post({
+                "reddit_post_id": reddit_post_id,
+                "subreddit": subreddit,
+                "title": title,
+                "body": body,
+                "author": author,
+                "posted_at": posted_at,
+                "score": score,
+                "score_reason": reason,
+                "status": "rejected",
+                "num_comments": post.get("num_comments", 0),
+                "reddit_upvotes": post.get("score", 0),
+            })
+            reject_count += 1
             continue
 
         post_data = {
@@ -350,8 +369,8 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
             if len(recent_drafts) > 5:
                 recent_drafts.pop()
 
-    if new_count:
-        logger.info("Term '%s' — %d new post(s) saved", term, new_count)
+    if new_count or reject_count:
+        logger.info("Term '%s' — %d opportunity, %d rejected", term, new_count, reject_count)
     return new_count
 
 
