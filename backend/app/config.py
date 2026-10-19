@@ -53,6 +53,20 @@ def reddit_configured() -> bool:
     IP flagged by Reddit's network security."""
     return all([REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD])
 
+# --- LLM (scorer / judge) ---
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+LLM_MODE = os.getenv("LLM_MODE", "live")  # live | replay (replay serves cached responses, no model calls, no cost)
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+GEMINI_FALLBACK_MODELS = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite,gemini-flash-lite-latest")
+# Protect the Claude Pro subscription: cap how fast the scorer may hit Claude.
+# When the budget for the current minute/hour is used, scoring overflows to
+# Gemini immediately — no waiting, no backlog, so a post is never missed.
+# Counted from the llm_calls table.
+CLAUDE_MAX_PER_MIN = int(os.getenv("CLAUDE_MAX_PER_MIN", "5"))
+CLAUDE_MAX_PER_HOUR = int(os.getenv("CLAUDE_MAX_PER_HOUR", "30"))
+CLAUDE_MAX_BUDGET_USD = float(os.getenv("CLAUDE_MAX_BUDGET_USD", "0.05"))  # native per-call cap
+
 # Cleanup
 POST_RETENTION_DAYS = 30
 
