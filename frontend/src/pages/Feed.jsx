@@ -19,6 +19,7 @@ const STATUS_TABS = [
   { label: 'Drafts', value: 'drafts' },
   { label: 'Approved', value: 'approved' },
   { label: 'Disapproved', value: 'disapproved' },
+  { label: 'Rejected', value: 'rejected' },
   { label: 'Search', value: 'search' },
 ]
 
@@ -510,6 +511,7 @@ function EmptyState({ tab, hasSearch }) {
     drafts: 'No stale drafts — all posts reviewed within 24 hours',
     approved: 'No approved posts yet',
     disapproved: 'No disapproved posts yet',
+    rejected: 'No rejected posts yet — low-scoring posts land here for audit',
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 192, gap: 8 }}>

@@ -17,7 +17,7 @@ export default function Metrics() {
 
   if (isLoading || !m) return <div className="text-slate-500 text-sm">Loading metrics…</div>
 
-  const { calls, cost, latency_ms, per_day, funnel, approve_rate_by_bucket, quota } = m
+  const { calls, cost, latency_ms, per_day, funnel, approve_rate_by_bucket, rejects_by_score, quota } = m
   const maxDay = Math.max(1, ...per_day.map((d) => d.calls))
 
   return (
@@ -72,6 +72,10 @@ export default function Metrics() {
       </Section>
       <Section title="Messages by status">
         <KeyVals data={funnel.messages} empty="no messages yet" />
+      </Section>
+
+      <Section title="Rejected by score">
+        <KeyVals data={rejects_by_score} empty="no rejects yet" />
       </Section>
 
       <Section title="Approve rate by score bucket">
