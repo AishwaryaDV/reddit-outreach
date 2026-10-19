@@ -41,7 +41,8 @@ def main() -> None:
             print("=" * 72)
             print(f"[{i}/{len(todo)}]  r/{c['subreddit']}")
             print(f"TITLE: {c['title']}")
-            print(f"BODY : {c['body'][:700]}")
+            print("BODY :")
+            print(" ".join(c["body"].split()))
             print("-" * 72)
 
             choice = ""

@@ -29,3 +29,4 @@ Thumbs.db
 
 # Labeling candidates are regenerable (exported from the DB / fetched)
 evals/data/candidates.jsonl
+evals/results/
