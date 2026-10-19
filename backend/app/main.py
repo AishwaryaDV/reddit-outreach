@@ -94,8 +94,11 @@ async def _get_live_config():
         "daily_dm_cap": int(await get_setting("daily_dm_cap", str(DAILY_DM_CAP))),
         "approval_window_min": int(await get_setting("approval_window_min", str(APPROVAL_WINDOW_MIN))),
         "approval_window_max": int(await get_setting("approval_window_max", str(APPROVAL_WINDOW_MAX))),
+        "auto_send_enabled": (await get_setting("auto_send_enabled", "false")) == "true",
+        "scoring_enabled": (await get_setting("scoring_enabled", "true")) == "true",
         "watcher_interval_minutes": WATCHER_INTERVAL_MINUTES,
         "post_retention_days": POST_RETENTION_DAYS,
+        "daily_llm_cap": DAILY_LLM_CAP,
         "gmail_configured": bool(GMAIL_USER and GMAIL_APP_PASSWORD and NOTIFY_EMAILS),
     }
 
@@ -112,7 +115,10 @@ class ConfigUpdate(BaseModel):
 
 @app.post("/config")
 async def update_config(body: ConfigUpdate):
-    allowed = {"portfolio_url", "daily_dm_cap", "approval_window_min", "approval_window_max"}
+    allowed = {
+        "portfolio_url", "daily_dm_cap", "approval_window_min", "approval_window_max",
+        "auto_send_enabled", "scoring_enabled",
+    }
     if body.key not in allowed:
         raise HTTPException(status_code=400, detail=f"Key '{body.key}' is not editable")
     await set_setting(body.key, body.value)
