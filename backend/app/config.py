@@ -67,6 +67,11 @@ CLAUDE_MAX_PER_MIN = int(os.getenv("CLAUDE_MAX_PER_MIN", "5"))
 CLAUDE_MAX_PER_HOUR = int(os.getenv("CLAUDE_MAX_PER_HOUR", "30"))
 CLAUDE_MAX_BUDGET_USD = float(os.getenv("CLAUDE_MAX_BUDGET_USD", "0.05"))  # native per-call cap
 
+# Anonymous search.rss pacing — Reddit throttles anonymous search hard, so we query
+# one phrase at a time with a gap between, and back off on 429. No login/API needed.
+SEARCH_TERM_DELAY_SECONDS = int(os.getenv("SEARCH_TERM_DELAY_SECONDS", "90"))
+SEARCH_BACKOFF_SECONDS = int(os.getenv("SEARCH_BACKOFF_SECONDS", "120"))
+
 # Cleanup
 POST_RETENTION_DAYS = 30
 

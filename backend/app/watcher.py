@@ -1,20 +1,31 @@
 import asyncio
+import html
 import logging
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from random import randint
 
 import httpx
 
-from app.config import SEARCH_TERMS, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX, reddit_configured
+from app.config import (
+    SEARCH_TERMS, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX,
+    SEARCH_TERM_DELAY_SECONDS, SEARCH_BACKOFF_SECONDS,
+)
 from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts, get_search_terms, get_setting, update_post_engagement
 from app.scorer import score_and_draft
 from app.notifications import send_notification
 
 logger = logging.getLogger(__name__)
 
-REDDIT_HEADERS = {"User-Agent": "reddit-outreach-personal-tool/1.0"}
-REDDIT_SEARCH_URL = "https://www.reddit.com/search.json"
+# Anonymous RSS read path (no login/API). A browser-like UA avoids some throttling.
+REDDIT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+    "Accept": "application/atom+xml",
+}
+REDDIT_SEARCH_RSS = "https://www.reddit.com/search.rss"
+_ATOM = {"a": "http://www.w3.org/2005/Atom"}
 
 _last_run_at: str | None = None
 
@@ -24,21 +35,67 @@ def get_last_run_at() -> str | None:
 
 
 async def fetch_posts(term: str, time_filter: str = "hour") -> list[dict]:
-    params = {"q": term, "sort": "new", "t": time_filter, "limit": 50}
-    async with httpx.AsyncClient(headers=REDDIT_HEADERS, timeout=15) as client:
+    """Newest posts matching `term` from Reddit's anonymous search RSS feed.
+
+    No login/API/credentials — a plain GET. Returns normalised post dicts. On a
+    429 (Reddit throttles anonymous search) we back off and return [] so the
+    sweep stays gentle rather than hammering.
+    """
+    params = {"q": term, "sort": "new", "limit": 25, "type": "link"}
+    if time_filter in ("hour", "day", "week", "month", "all"):
+        params["t"] = time_filter
+    async with httpx.AsyncClient(headers=REDDIT_HEADERS, timeout=20, follow_redirects=True) as client:
         try:
-            response = await client.get(REDDIT_SEARCH_URL, params=params)
-            if response.status_code != 200:
-                logger.warning("Reddit search returned %s for term: %s", response.status_code, term)
-                return []
-            return response.json().get("data", {}).get("children", [])
+            response = await client.get(REDDIT_SEARCH_RSS, params=params)
         except httpx.RequestError as e:
-            logger.error("Reddit request failed for term '%s': %s", term, e)
+            logger.error("Reddit RSS request failed for '%s': %s", term, e)
             return []
+    if response.status_code == 429:
+        logger.warning("Reddit search rate-limited (429) for '%s' — backing off %ss", term, SEARCH_BACKOFF_SECONDS)
+        await asyncio.sleep(SEARCH_BACKOFF_SECONDS)
+        return []
+    if response.status_code != 200:
+        logger.warning("Reddit RSS returned %s for term: %s", response.status_code, term)
+        return []
+    return _parse_atom(response.text)
+
+
+def _parse_atom(xml_text: str) -> list[dict]:
+    """Parse a Reddit search/subreddit Atom feed into normalised post dicts."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        logger.warning("Reddit RSS returned non-XML (throttle page?)")
+        return []
+    posts = []
+    for entry in root.findall("a:entry", _ATOM):
+        rid = (entry.findtext("a:id", "", _ATOM) or "").replace("t3_", "").strip()
+        if not rid:
+            continue
+        author_el = entry.find("a:author/a:name", _ATOM)
+        author = (author_el.text or "").replace("/u/", "").strip() if author_el is not None else ""
+        cat_el = entry.find("a:category", _ATOM)
+        subreddit = (cat_el.get("term") if cat_el is not None else "") or ""
+        content = entry.findtext("a:content", "", _ATOM) or ""
+        body = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", content))).strip()
+        ts = entry.findtext("a:published", "", _ATOM) or entry.findtext("a:updated", "", _ATOM) or ""
+        try:
+            created_utc = datetime.fromisoformat(ts).timestamp() if ts else 0
         except ValueError:
-            # Reddit occasionally returns HTML error pages with status 200
-            logger.warning("Reddit returned non-JSON response for term: %s", term)
-            return []
+            created_utc = 0
+        posts.append({
+            "id": rid,
+            "title": (entry.findtext("a:title", "", _ATOM) or "").strip(),
+            "selftext": body,
+            "author": author,
+            "subreddit": subreddit,
+            "created_utc": created_utc,
+            # RSS doesn't expose these; keep the pipeline's expected keys.
+            "num_comments": 0,
+            "score": 0,
+            "over_18": False,
+        })
+    return posts
 
 
 _URL_RE = re.compile(r"https?://\S+")
@@ -206,8 +263,7 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
     posts = await fetch_posts(term, time_filter)
     new_count = 0
 
-    for wrapper in posts:
-        post = wrapper.get("data", {})
+    for post in posts:
         reddit_post_id = post.get("id")
 
         if not reddit_post_id:
@@ -300,9 +356,6 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
 
 
 async def search_term(term: str) -> int:
-    if not reddit_configured():
-        logger.info("Reddit API not configured — live search skipped")
-        return 0
     recent_drafts = await get_recent_drafts(limit=5)
     seen: set = set()
     count = await process_term(term, recent_drafts, "day", seen)
@@ -314,9 +367,6 @@ _watcher_lock = asyncio.Lock()
 
 
 async def run_watcher(time_filter: str = "hour"):
-    if not reddit_configured():
-        logger.info("Reddit API not configured — watcher paused (no requests to Reddit until creds are set)")
-        return
     # Startup task, scheduler ticks, /watcher/run and /watcher/backfill can all
     # fire this — overlapping runs race the post_exists/save_post dedup check.
     if _watcher_lock.locked():
@@ -345,7 +395,7 @@ async def run_watcher(time_filter: str = "hour"):
             except Exception:
                 logger.exception("Term '%s' failed — continuing with remaining terms", term)
             if i < len(active_terms) - 1:
-                await asyncio.sleep(2)
+                await asyncio.sleep(SEARCH_TERM_DELAY_SECONDS)
 
         global _last_run_at
         _last_run_at = datetime.now(tz=timezone.utc).isoformat()
