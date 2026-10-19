@@ -11,7 +11,10 @@ import argparse
 import asyncio
 import json
 import random
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so `app` imports when run directly
 
 from sqlalchemy import select
 
