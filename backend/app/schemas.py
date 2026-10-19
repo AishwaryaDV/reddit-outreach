@@ -4,9 +4,10 @@ These replace the shapes the frontend used to read straight from Supabase, so
 the browser now talks only to the backend.
 """
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PostOut(BaseModel):
@@ -78,3 +79,14 @@ class SearchTermIn(BaseModel):
 
 class SearchTermPatch(BaseModel):
     active: bool
+
+
+# --- Scorer structured output (LLM must return exactly this shape) ---
+
+class ScoreResult(BaseModel):
+    score: int = Field(ge=1, le=10)
+    label: Literal["opportunity", "not_opportunity"]
+    reasons: list[str] = Field(default_factory=list)
+    red_flags: list[str] = Field(default_factory=list)
+    budget_mentioned: bool = False
+    draft: str = ""

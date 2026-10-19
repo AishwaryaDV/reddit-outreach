@@ -4,9 +4,12 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from app.config import PORTFOLIO_URL, LLM_MODE
 from app.database import get_setting
 from app.llm_client import complete, log_call
+from app.schemas import ScoreResult
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +33,41 @@ async def _build_system_prompt() -> str:
     return _load_prompt_template(PROMPT_VERSION).format(portfolio_url=await _get_portfolio_url())
 
 
+def _extract_json(text: str) -> dict | None:
+    """Pull a JSON object out of the response (handles code fences / stray text)."""
+    if not text:
+        return None
+    for candidate in (text.strip(), re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()):
+        try:
+            return json.loads(candidate)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return None
+
+
+def _validate(text: str) -> tuple[ScoreResult | None, str | None]:
+    data = _extract_json(text)
+    if data is None:
+        return None, "no JSON object found"
+    try:
+        return ScoreResult.model_validate(data), None
+    except ValidationError as e:
+        return None, "; ".join(err["msg"] for err in e.errors())[:200]
+
+
 async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None = None) -> dict | None:
-    """Score a post 1-10 and draft a DM. Routes through llm_client (Claude
-    primary within its rate budget, Gemini overflow) so it can never drain the
-    Claude Pro subscription. Returns the parsed result, or None if scoring is
-    paused or the response can't be parsed."""
+    """Score a post and draft a DM, validated against the ScoreResult schema.
+
+    Routes through llm_client (Claude primary, rate-budgeted; Gemini overflow) so
+    it can never drain the Pro subscription. Returns a dict with score/reason/draft
+    (+ the structured fields), or None if scoring is paused or validation fails.
+    """
     # Kill switch — pause all LLM scoring instantly from Settings, no redeploy.
     if (await get_setting("scoring_enabled", "true")) != "true":
         logger.info("Scoring paused (scoring_enabled=false) — skipping")
@@ -46,54 +79,30 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
         recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
     user_message = f"Post title: {title}\n\nPost body: {body or '(no body)'}{recent_context}"
 
-    result = await complete("score", system_prompt, user_message)
-    parsed = _extract_and_validate(result.text) if result.text else None
-    await log_call("score", result, None, PROMPT_VERSION, parse_ok=parsed is not None)
-    if parsed is None:
-        logger.warning(
-            "Scorer: unparseable %s response%s",
-            result.backend, f" ({result.error})" if result.error else "",
+    result = await complete("score", system_prompt, user_message, schema=ScoreResult)
+    sr, err = _validate(result.text)
+
+    # Retry once with the validation error appended — let the model self-correct.
+    if sr is None and result.text:
+        retry_message = (
+            f"{user_message}\n\nYour previous reply was invalid ({err}). "
+            "Return ONLY valid JSON with the required fields."
         )
-    return parsed
+        result = await complete("score", system_prompt, retry_message, schema=ScoreResult)
+        sr, err = _validate(result.text)
 
-
-def _extract_and_validate(text: str) -> dict | None:
-    # Try 1: direct parse
-    data = _try_parse(text.strip())
-
-    # Try 2: strip markdown code fences
-    if data is None:
-        stripped = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
-        data = _try_parse(stripped)
-
-    # Try 3: find first {...} block containing "score"
-    if data is None:
-        match = re.search(r'\{[^{}]*"score"[^{}]*\}', text, re.DOTALL)
-        if match:
-            data = _try_parse(match.group())
-
-    if data is None:
-        logger.error("Could not extract JSON from scorer response | raw: %s", text[:300])
+    await log_call("score", result, None, PROMPT_VERSION, parse_ok=sr is not None)
+    if sr is None:
+        logger.warning("Scorer: invalid response via %s (%s)", result.backend, err or result.error)
         return None
 
-    # Validate required fields and types
-    score = data.get("score")
-    if not isinstance(score, int) or not (1 <= score <= 10):
-        logger.error("Invalid score value: %s", score)
-        return None
-
-    data.setdefault("reason", "")
-    data.setdefault("draft", "")
-
-    # Enforce: no draft for low scores
-    if score <= 2:
-        data["draft"] = ""
-
-    return data
-
-
-def _try_parse(text: str) -> dict | None:
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        return None
+    draft = sr.draft if sr.score > 2 else ""
+    reason = "; ".join(sr.reasons) or ("; ".join(sr.red_flags) if sr.red_flags else "")
+    return {
+        "score": sr.score,
+        "reason": reason,
+        "draft": draft,
+        "label": sr.label,
+        "red_flags": sr.red_flags,
+        "budget_mentioned": sr.budget_mentioned,
+    }

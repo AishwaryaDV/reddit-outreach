@@ -46,8 +46,9 @@ class LLMResult:
     error: str | None = None
 
 
-def _cache_key(step: str, system_prompt: str, user_message: str) -> str:
-    h = hashlib.sha256(f"{step}\x00{system_prompt}\x00{user_message}".encode())
+def _cache_key(step: str, system_prompt: str, user_message: str, schema=None) -> str:
+    schema_name = schema.__name__ if schema else ""
+    h = hashlib.sha256(f"{step}\x00{system_prompt}\x00{user_message}\x00{schema_name}".encode())
     return h.hexdigest()[:24]
 
 
@@ -145,12 +146,12 @@ def _gemini_models() -> list[str]:
 _TRANSIENT = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "500", "INTERNAL", "deadline", "timeout")
 
 
-async def _call_gemini(system_prompt: str, user_message: str, fell_back: bool) -> LLMResult:
+async def _call_gemini(system_prompt: str, user_message: str, fell_back: bool, schema=None) -> LLMResult:
     from google.genai import types
-    config = types.GenerateContentConfig(
-        system_instruction=system_prompt,
-        response_mime_type="application/json",
-    )
+    config_kwargs = dict(system_instruction=system_prompt, response_mime_type="application/json")
+    if schema is not None:
+        config_kwargs["response_schema"] = schema  # Gemini enforces the Pydantic shape
+    config = types.GenerateContentConfig(**config_kwargs)
     last_err = None
     for model in _gemini_models():
         for attempt in range(2):  # one retry per model on transient errors
@@ -177,10 +178,12 @@ async def _call_gemini(system_prompt: str, user_message: str, fell_back: bool) -
     raise last_err if last_err else RuntimeError("gemini: all models failed")
 
 
-async def complete(step: str, system_prompt: str, user_message: str) -> LLMResult:
+async def complete(step: str, system_prompt: str, user_message: str, schema=None) -> LLMResult:
     """One model call for `step`. Claude primary within its rate budget, Gemini
-    overflow/fallback (immediate — never waits). Raises only on a replay cache miss."""
-    key = _cache_key(step, system_prompt, user_message)
+    overflow/fallback (immediate — never waits). `schema` (a Pydantic model) is
+    enforced natively on Gemini; on Claude it's enforced by the prompt + the
+    caller's Pydantic validation. Raises only on a replay cache miss."""
+    key = _cache_key(step, system_prompt, user_message, schema)
 
     if LLM_MODE == "replay":
         cached = _read_cache(key)
@@ -198,7 +201,7 @@ async def complete(step: str, system_prompt: str, user_message: str) -> LLMResul
             result = None
     if result is None:
         try:
-            result = await _call_gemini(system_prompt, user_message, fell_back=tried_claude)
+            result = await _call_gemini(system_prompt, user_message, fell_back=tried_claude, schema=schema)
         except Exception as e:
             logger.error("Gemini call failed: %s", str(e)[:200])
             return LLMResult(

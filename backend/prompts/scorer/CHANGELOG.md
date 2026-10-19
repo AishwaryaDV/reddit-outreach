@@ -5,7 +5,8 @@ and is recorded on every call in the `llm_calls` table, so eval results can be t
 exact prompt that produced them.
 
 ## v1 (2026-10-19)
-Baseline — extracted verbatim from the old inline `SYSTEM_PROMPT_TEMPLATE` in `scorer.py`.
-1–10 rubric, 3-line message rules, anti-bot variation, free-text JSON output
-(`{score, reason, draft}`). No behavioural change from the previous inline prompt — this
-commit only moves it into a versioned file.
+Baseline rubric (1–10), 3-line message rules, anti-bot variation. Output is the structured
+`ScoreResult` schema (`score, label, reasons, red_flags, budget_mentioned, draft`), enforced
+natively on Gemini via `response_schema` and validated with Pydantic on both backends (retry
+once on a validation failure). (Started the same day as free-text `{score, reason, draft}`;
+moved to the structured schema.)
