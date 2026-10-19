@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from app.config import PORTFOLIO_URL, LLM_MODE
 from app.database import get_setting
-from app.llm_client import complete, log_call
+from app.llm_client import complete, log_call, quota_exceeded
 from app.schemas import ScoreResult
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,9 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
     # Kill switch — pause all LLM scoring instantly from Settings, no redeploy.
     if (await get_setting("scoring_enabled", "true")) != "true":
         logger.info("Scoring paused (scoring_enabled=false) — skipping")
+        return None
+    if await quota_exceeded():
+        logger.warning("Daily LLM quota reached — scoring paused for today")
         return None
 
     system_prompt = await _build_system_prompt()

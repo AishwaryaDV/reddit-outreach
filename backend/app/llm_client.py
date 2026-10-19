@@ -23,7 +23,7 @@ from sqlalchemy import func, select
 
 from app.config import (
     CLAUDE_MAX_BUDGET_USD, CLAUDE_MAX_PER_HOUR, CLAUDE_MAX_PER_MIN,
-    CLAUDE_MODEL, GEMINI_API_KEY, GEMINI_FALLBACK_MODELS, GEMINI_MODEL, LLM_MODE,
+    CLAUDE_MODEL, DAILY_LLM_CAP, GEMINI_API_KEY, GEMINI_FALLBACK_MODELS, GEMINI_MODEL, LLM_MODE,
 )
 from app.db import get_session_factory
 from app.models import LLMCall
@@ -95,6 +95,19 @@ async def _claude_budget_available() -> bool:
             )
         )
         return (per_hour or 0) < CLAUDE_MAX_PER_HOUR
+
+
+async def _calls_today() -> int:
+    today = datetime.now(tz=timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    async with get_session_factory()() as session:
+        return await session.scalar(
+            select(func.count(LLMCall.id)).where(LLMCall.created_at >= today)
+        ) or 0
+
+
+async def quota_exceeded() -> bool:
+    """True once the daily total-call cap (any backend) is hit — scoring pauses."""
+    return await _calls_today() >= DAILY_LLM_CAP
 
 
 async def _call_claude(system_prompt: str, user_message: str) -> LLMResult:
