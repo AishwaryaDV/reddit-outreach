@@ -4,6 +4,7 @@ const nav = [
   { to: '/', label: 'Feed' },
   { to: '/queue', label: 'Queue' },
   { to: '/tracker', label: 'Tracker' },
+  { to: '/metrics', label: 'Metrics' },
   { to: '/settings', label: 'Settings' },
 ]
 
