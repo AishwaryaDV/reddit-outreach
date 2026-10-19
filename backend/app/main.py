@@ -416,7 +416,7 @@ async def metrics():
                              .where(LLMCall.latency_ms.isnot(None)))
         by_backend = dict((await s.execute(
             select(LLMCall.backend, func.count(LLMCall.id)).group_by(LLMCall.backend))).all())
-        day = func.date_trunc("day", LLMCall.created_at)
+        day = func.date_trunc("day", LLMCall.created_at, "UTC")  # bucket by UTC day to match the quota counter
         per_day = (await s.execute(
             select(day.label("d"), func.count(LLMCall.id), func.coalesce(func.sum(LLMCall.cost_usd), 0))
             .where(LLMCall.created_at >= now - timedelta(days=14)).group_by(day).order_by(day))).all()
