@@ -42,6 +42,8 @@ The product (find dev gigs, draft DMs, review, send) is unchanged. What's new is
 
 Each phase lists: **goal · what we build · test · done-when · needs-from-you.**
 Phases 1–8 are the AI upgrade. Phase 0 (ingestion) and Phase 9 (deploy/security) bracket them.
+Phases 10–11 (ingestion recall + reject audit) were added after the Phase 7 metrics pass surfaced
+a recall gap: the scorer is well-calibrated but the search feeds it ~0 real dev-hiring posts.
 
 ### Phase 0 — Reddit OAuth reads (BUG-0) · unblocks ingestion
 - **Goal:** fix the 403; get fresh posts flowing again.
@@ -186,6 +188,37 @@ Phases 1–8 are the AI upgrade. Phase 0 (ingestion) and Phase 9 (deploy/securit
   - Claude: `claude auth login` as the server user (no API key); Gemini fallback covers lapses.
   - Optional: GitHub deploy webhook → `git pull` + `pip install` + `alembic upgrade head` + restart.
 - **Done when:** deployed with auth, `DRY_RUN` set intentionally, watcher alive under systemd.
+
+### Phase 10 — Ingestion recall: widen the net, trust the scorer
+- **Why:** a calibration pass (13 real posts via Gemini) and a scan of 66 fetched candidates found
+  **zero** clean "employer hiring a web/fullstack dev" posts — all noise, showcases, job-seekers,
+  or non-dev `[Hiring]`. The scorer rejected every one *correctly*. So "catching nothing" is a
+  **recall** problem (the search feeds it ~0 real gigs), not a scorer problem.
+- **Root causes:** (1) global `search.rss` does loose full-text matching → drags in unrelated subs
+  while good niche posts don't rank; (2) `_SUBREDDIT_BLOCKLIST` blocks `forhire` — a *main* source
+  of real `[Hiring]` dev gigs — to avoid seekers, but the scorer now filters seekers better than a
+  crude sub blocklist (proven: every seeker in calibration → score 1).
+- **Build:**
+  - Drop `forhire` (re-evaluate `jobboards`/`networkingjobs`) from the blocklist; let the scorer
+    filter seekers instead of pre-filtering by subreddit.
+  - Poll targeted subreddit `new` feeds (higher gig density than global search): `/r/<sub>/new.rss`
+    for forhire, jobbit, freelance_forhire, remotejs, hiring, slavelabour, plus stack/location subs —
+    merged + deduped (by post id) with the existing global `search.rss`.
+  - Flair-aware ranking: prefer `[Hiring]`/`[Task]`; treat `[For Hire]` as a seeker signal.
+  - Tune/expand phrases (wordpress/shopify/webflow/next.js developer needed, "looking to hire",
+    "paid gig", "contract developer").
+- **Done when:** a watcher run surfaces real employer-hiring-a-dev posts scoring ≥ 3 over a window,
+  and the funnel shows non-zero saved. (Phase 11's reject log is the measurement tool for this.)
+
+### Phase 11 — Persist rejected posts (recall audit)
+- **Why:** the watcher `continue`s on score ≤ 2 and **discards the score**, so "did we miss a lead?"
+  is unanswerable — it already bit us (the 22 rejected scores were unrecoverable).
+- **Build:** save every scored post, including ≤ 2, as status `rejected` (store score + label + top
+  reason); never notify/draft/send for rejects. Auto-purged by the existing 30-day retention. Add a
+  **Rejected** filter in the Feed + surface the reject score-distribution in `/metrics`, so false
+  negatives are visible without re-running the LLM.
+- **Done when:** every post the watcher scores is visible somewhere; you can scan rejects for
+  mis-scored leads at a glance.
 
 ---
 
