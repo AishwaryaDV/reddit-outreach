@@ -28,6 +28,13 @@ SEARCH_TERMS = [
     "need a fullstack developer",
 ]
 
+# Subreddit new-feeds polled directly (denser in real gigs than global search).
+# The scorer filters seekers/noise, so breadth is safe. Env override: comma list.
+SUBREDDIT_SOURCES = [s.strip() for s in os.getenv(
+    "SUBREDDIT_SOURCES",
+    "forhire,jobbit,freelance_forhire,remotejs,hiring,forhireworldwide",
+).split(",") if s.strip()]
+
 WATCHER_INTERVAL_MINUTES = 10
 APPROVAL_WINDOW_MIN = 2
 APPROVAL_WINDOW_MAX = 5
