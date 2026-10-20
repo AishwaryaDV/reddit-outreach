@@ -8,8 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import (
     WATCHER_INTERVAL_MINUTES, GMAIL_USER, GMAIL_APP_PASSWORD, NOTIFY_EMAILS,
-    APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX, DAILY_DM_CAP, PORTFOLIO_URL, POST_RETENTION_DAYS, DRY_RUN,
-    CORS_ORIGINS,
+    APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX, DAILY_DM_CAP, DAILY_LLM_CAP,
+    PORTFOLIO_URL, POST_RETENTION_DAYS, DRY_RUN, CORS_ORIGINS,
 )
 from app.watcher import run_watcher, run_cleanup, get_last_run_at, search_term
 from app.scorer import SCORER_MODE
@@ -18,12 +18,12 @@ from pydantic import BaseModel
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, nulls_last, or_, select, update
+from sqlalchemy import case, delete, func, nulls_last, or_, select, update
 from sqlalchemy.orm import selectinload
 
 from app.database import get_setting, set_setting
 from app.db import get_session_factory
-from app.models import Message, Post, SearchTerm
+from app.models import LLMCall, Message, Post, SearchTerm
 from app.schemas import (
     ApproveIn, MessageOut, MessageWithPost, OutcomeIn,
     PostOut, PostsPage, SearchTermIn, SearchTermOut, SearchTermPatch,
@@ -94,8 +94,11 @@ async def _get_live_config():
         "daily_dm_cap": int(await get_setting("daily_dm_cap", str(DAILY_DM_CAP))),
         "approval_window_min": int(await get_setting("approval_window_min", str(APPROVAL_WINDOW_MIN))),
         "approval_window_max": int(await get_setting("approval_window_max", str(APPROVAL_WINDOW_MAX))),
+        "auto_send_enabled": (await get_setting("auto_send_enabled", "false")) == "true",
+        "scoring_enabled": (await get_setting("scoring_enabled", "true")) == "true",
         "watcher_interval_minutes": WATCHER_INTERVAL_MINUTES,
         "post_retention_days": POST_RETENTION_DAYS,
+        "daily_llm_cap": DAILY_LLM_CAP,
         "gmail_configured": bool(GMAIL_USER and GMAIL_APP_PASSWORD and NOTIFY_EMAILS),
     }
 
@@ -112,7 +115,10 @@ class ConfigUpdate(BaseModel):
 
 @app.post("/config")
 async def update_config(body: ConfigUpdate):
-    allowed = {"portfolio_url", "daily_dm_cap", "approval_window_min", "approval_window_max"}
+    allowed = {
+        "portfolio_url", "daily_dm_cap", "approval_window_min", "approval_window_max",
+        "auto_send_enabled", "scoring_enabled",
+    }
     if body.key not in allowed:
         raise HTTPException(status_code=400, detail=f"Key '{body.key}' is not editable")
     await set_setting(body.key, body.value)
@@ -390,3 +396,52 @@ async def delete_search_term(term_id: str):
         await session.execute(delete(SearchTerm).where(SearchTerm.id == tid))
         await session.commit()
     return {"deleted": True}
+
+
+@app.get("/metrics")
+async def metrics():
+    now = datetime.now(tz=timezone.utc)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    async with get_session_factory()() as s:
+        total_calls = await s.scalar(select(func.count(LLMCall.id))) or 0
+        today_calls = await s.scalar(select(func.count(LLMCall.id)).where(LLMCall.created_at >= today)) or 0
+        total_cost = float(await s.scalar(select(func.coalesce(func.sum(LLMCall.cost_usd), 0))) or 0)
+        today_cost = float(await s.scalar(
+            select(func.coalesce(func.sum(LLMCall.cost_usd), 0)).where(LLMCall.created_at >= today)) or 0)
+        parse_ok = await s.scalar(select(func.count(LLMCall.id)).where(LLMCall.parse_ok.is_(True))) or 0
+        fell_back = await s.scalar(select(func.count(LLMCall.id)).where(LLMCall.fell_back.is_(True))) or 0
+        p50 = await s.scalar(select(func.percentile_cont(0.5).within_group(LLMCall.latency_ms.asc()))
+                             .where(LLMCall.latency_ms.isnot(None)))
+        p95 = await s.scalar(select(func.percentile_cont(0.95).within_group(LLMCall.latency_ms.asc()))
+                             .where(LLMCall.latency_ms.isnot(None)))
+        by_backend = dict((await s.execute(
+            select(LLMCall.backend, func.count(LLMCall.id)).group_by(LLMCall.backend))).all())
+        day = func.date_trunc("day", LLMCall.created_at, "UTC")  # bucket by UTC day to match the quota counter
+        per_day = (await s.execute(
+            select(day.label("d"), func.count(LLMCall.id), func.coalesce(func.sum(LLMCall.cost_usd), 0))
+            .where(LLMCall.created_at >= now - timedelta(days=14)).group_by(day).order_by(day))).all()
+        posts_by_status = dict((await s.execute(
+            select(Post.status, func.count(Post.id)).group_by(Post.status))).all())
+        msgs_by_status = dict((await s.execute(
+            select(Message.status, func.count(Message.id)).group_by(Message.status))).all())
+        bucket = case((Post.score >= 8, "8-10"), (Post.score >= 5, "5-7"),
+                      (Post.score >= 3, "3-4"), else_="1-2")
+        buckets = (await s.execute(
+            select(bucket.label("b"), func.count(Post.id),
+                   func.count(Post.id).filter(Post.status.in_(["approved", "sent", "dry_sent"])))
+            .where(Post.score.isnot(None)).group_by(bucket))).all()
+    return {
+        "calls": {
+            "total": total_calls, "today": today_calls,
+            "parse_ok_pct": round(parse_ok / total_calls * 100, 1) if total_calls else None,
+            "fell_back": fell_back, "by_backend": by_backend,
+        },
+        "cost": {"total_usd": round(total_cost, 4), "today_usd": round(today_cost, 4)},
+        "latency_ms": {"p50": int(p50) if p50 is not None else None,
+                       "p95": int(p95) if p95 is not None else None},
+        "per_day": [{"day": d.strftime("%Y-%m-%d"), "calls": c, "cost": round(float(cost), 4)}
+                    for d, c, cost in per_day],
+        "funnel": {"posts": posts_by_status, "messages": msgs_by_status},
+        "approve_rate_by_bucket": [{"bucket": b, "total": t, "approved": a} for b, t, a in buckets],
+        "quota": {"daily_cap": DAILY_LLM_CAP, "today": today_calls, "paused": today_calls >= DAILY_LLM_CAP},
+    }

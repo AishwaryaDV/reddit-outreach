@@ -66,6 +66,8 @@ GEMINI_FALLBACK_MODELS = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-l
 CLAUDE_MAX_PER_MIN = int(os.getenv("CLAUDE_MAX_PER_MIN", "5"))
 CLAUDE_MAX_PER_HOUR = int(os.getenv("CLAUDE_MAX_PER_HOUR", "30"))
 CLAUDE_MAX_BUDGET_USD = float(os.getenv("CLAUDE_MAX_BUDGET_USD", "0.05"))  # native per-call cap
+# Hard daily cap on total LLM calls (any backend). Scoring pauses when hit.
+DAILY_LLM_CAP = int(os.getenv("DAILY_LLM_CAP", "500"))
 
 # Anonymous search.rss pacing — Reddit throttles anonymous search hard, so we query
 # one phrase at a time with a gap between, and back off on 429. No login/API needed.

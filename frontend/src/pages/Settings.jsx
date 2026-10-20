@@ -9,6 +9,7 @@ export default function Settings() {
         <p className="text-sm text-slate-500 mt-0.5">Configure the tool without touching code</p>
       </div>
       <NotificationsSection />
+      <AutomationSection />
       <SearchTermsSection />
       <ConfigSection />
     </div>
@@ -73,6 +74,88 @@ function NotificationsSection() {
         </button>
       </div>
     </section>
+  )
+}
+
+function AutomationSection() {
+  const [config, setConfig] = useState(null)
+  const [saving, setSaving] = useState(null)
+
+  useEffect(() => {
+    fetch(`${API}/config`).then((r) => r.json()).then(setConfig).catch(() => {})
+  }, [])
+
+  async function toggle(key, next) {
+    setSaving(key)
+    try {
+      const res = await fetch(`${API}/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value: String(next) }),
+      })
+      setConfig(await res.json())
+    } catch {
+      // backend offline
+    }
+    setSaving(null)
+  }
+
+  return (
+    <section>
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold text-white">Automation</h2>
+        <p className="text-xs text-slate-500 mt-0.5">Control how much the tool does on its own</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <ToggleRow
+          label="Auto-send after review window"
+          desc={config?.auto_send_enabled
+            ? 'Un-actioned drafts send automatically once their review window elapses'
+            : 'Only messages you explicitly approve are sent (recommended)'}
+          on={!!config?.auto_send_enabled}
+          disabled={!config || saving === 'auto_send_enabled'}
+          onClick={() => toggle('auto_send_enabled', !config.auto_send_enabled)}
+        />
+        <ToggleRow
+          label="Scoring enabled"
+          desc={config && !config.scoring_enabled
+            ? 'Paused — no LLM calls, no new drafts'
+            : 'New posts are scored and drafted by the LLM'}
+          on={config ? !!config.scoring_enabled : true}
+          disabled={!config || saving === 'scoring_enabled'}
+          onClick={() => toggle('scoring_enabled', !config.scoring_enabled)}
+        />
+      </div>
+
+      {config?.daily_llm_cap != null && (
+        <p className="text-xs text-slate-600 mt-2">
+          Daily LLM cap: {config.daily_llm_cap} calls — scoring pauses for the day when hit.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function ToggleRow({ label, desc, on, disabled, onClick }) {
+  return (
+    <div className="bg-white/3 border border-white/8 rounded-xl px-4 py-3 flex items-center justify-between">
+      <div className="pr-4">
+        <p className="text-sm text-slate-300">{label}</p>
+        <p className="text-xs text-slate-600 mt-0.5">{desc}</p>
+      </div>
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        className={`w-11 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-40 ${
+          on ? 'bg-emerald-500' : 'bg-white/10'
+        }`}
+      >
+        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+          on ? 'left-5' : 'left-0.5'
+        }`} />
+      </button>
+    </div>
   )
 }
 

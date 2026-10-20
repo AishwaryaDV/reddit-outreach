@@ -152,12 +152,16 @@ async def process_auto_sends() -> None:
     excluded here. Capped at AUTO_SEND_BATCH per run.
     """
     now = datetime.now(tz=timezone.utc)
+    # Human-approval by default: only explicitly-approved messages auto-send. Set
+    # auto_send_enabled=true in Settings to also fire un-actioned 'pending' ones.
+    auto_send = (await get_setting("auto_send_enabled", "false")) == "true"
+    statuses = ["pending", "approved"] if auto_send else ["approved"]
     async with get_session_factory()() as session:
         result = await session.execute(
             select(Message.id, Message.post_id, Message.final_message, Message.draft, Post.author)
             .join(Post, Message.post_id == Post.id)
             .where(
-                Message.status.in_(["pending", "approved"]),
+                Message.status.in_(statuses),
                 Message.send_after <= now,
             )
             .order_by(Message.send_after)

@@ -6,6 +6,7 @@ import Feed from './pages/Feed'
 import MessageReview from './pages/MessageReview'
 import Queue from './pages/Queue'
 import Tracker from './pages/Tracker'
+import Metrics from './pages/Metrics'
 import Settings from './pages/Settings'
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="/review/:id" element={<MessageReview />} />
             <Route path="/queue" element={<Queue />} />
             <Route path="/tracker" element={<Tracker />} />
+            <Route path="/metrics" element={<Metrics />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </Layout>
