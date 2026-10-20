@@ -32,7 +32,7 @@ SEARCH_TERMS = [
 # The scorer filters seekers/noise, so breadth is safe. Env override: comma list.
 SUBREDDIT_SOURCES = [s.strip() for s in os.getenv(
     "SUBREDDIT_SOURCES",
-    "forhire,jobbit,freelance_forhire,remotejs,hiring,forhireworldwide",
+    "jobbit,remotejs,hiring",
 ).split(",") if s.strip()]
 
 WATCHER_INTERVAL_MINUTES = 10

@@ -127,7 +127,7 @@ _NO_PAY_PHRASES = [
 _PLATFORM_BLOCKLIST = ["micro1", "mercor"]
 
 _SUBREDDIT_BLOCKLIST = [
-    "jobboards", "networkingjobs",
+    "jobboards", "networkingjobs", "forhire",
 ]
 
 _IRRELEVANT_STACKS = [
