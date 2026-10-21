@@ -57,7 +57,9 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(process_auto_sends, "interval", minutes=1, id="auto_send")
     scheduler.start()
     logging.info("Watcher scheduler started — running every %d minutes", WATCHER_INTERVAL_MINUTES)
-    _spawn(run_watcher())
+    # Backfill the last 24h on boot so downtime doesn't lose posts (the 10-min
+    # scheduled runs use the tighter 'hour' window for freshness).
+    _spawn(run_watcher(time_filter="day"))
     yield
     scheduler.shutdown()
     logging.info("Scheduler stopped")
@@ -174,9 +176,12 @@ async def search_reddit(q: str):
 
 
 @app.post("/watcher/run")
-async def trigger_watcher():
-    _spawn(run_watcher())
-    return {"status": "watcher triggered"}
+async def trigger_watcher(time: str = "hour"):
+    # Manual Reddit fetch over a chosen window (maps to Reddit's search time
+    # filter). Defaults to 'hour' to match the auto-sweep.
+    tf = time if time in ("hour", "day", "week", "month", "all") else "hour"
+    _spawn(run_watcher(time_filter=tf))
+    return {"status": f"watcher triggered ({tf})"}
 
 
 @app.post("/watcher/backfill")
