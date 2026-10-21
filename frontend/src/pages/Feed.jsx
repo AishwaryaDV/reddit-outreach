@@ -14,11 +14,20 @@ const TIME_FILTERS = [
   { label: 'All time', value: 'all' },
 ]
 
+// On-demand Reddit fetch windows (maps to Reddit's search time filter). The
+// auto-sweep runs 'hour' every 10 min; these let you pull a wider window now.
+const RUN_WINDOWS = [
+  { label: 'Last hour', value: 'hour' },
+  { label: 'Today', value: 'day' },
+  { label: 'This week', value: 'week' },
+]
+
 const STATUS_TABS = [
   { label: 'All', value: 'all' },
   { label: 'Drafts', value: 'drafts' },
   { label: 'Approved', value: 'approved' },
   { label: 'Disapproved', value: 'disapproved' },
+  { label: 'Rejected', value: 'rejected' },
   { label: 'Search', value: 'search' },
 ]
 
@@ -183,7 +192,7 @@ export default function Feed() {
           options={TIME_FILTERS}
         />
 
-        <BackfillButton />
+        <RunSearchButton />
       </div>
 
       {/* Tabs */}
@@ -510,6 +519,7 @@ function EmptyState({ tab, hasSearch }) {
     drafts: 'No stale drafts — all posts reviewed within 24 hours',
     approved: 'No approved posts yet',
     disapproved: 'No disapproved posts yet',
+    rejected: 'No rejected posts yet — low-scoring posts land here for audit',
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 192, gap: 8 }}>
@@ -559,47 +569,56 @@ function Pagination({ page, totalPages, onPageChange }) {
   )
 }
 
-function BackfillButton() {
-  const [state, setState] = useState('idle')
+function RunSearchButton() {
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState('')
 
-  async function handleClick() {
-    if (state !== 'idle') return
-    setState('loading')
-    try { await fetch(`${API}/watcher/backfill`, { method: 'POST' }) } catch {}
-    setState('done')
-    setTimeout(() => setState('idle'), 3000)
+  async function run(win) {
+    setOpen(false)
+    setLoading(true)
+    setDone('')
+    try { await fetch(`${API}/watcher/run?time=${win.value}`, { method: 'POST' }) } catch {}
+    setLoading(false)
+    setDone(win.label)
+    setTimeout(() => setDone(''), 5000)
   }
 
-  const icon = state === 'loading'
-    ? <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-    : state === 'done'
-    ? <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-    : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+  const label = loading ? 'Checking…' : done ? `Checking ${done.toLowerCase()}` : 'Check Reddit'
 
   return (
-    <div style={{ position: 'relative' }} className="group">
+    <div style={{ position: 'relative' }}>
       <button
-        onClick={handleClick}
-        disabled={state !== 'idle'}
+        onClick={() => setOpen((o) => !o)}
+        disabled={loading}
         style={{
           display: 'flex', alignItems: 'center', gap: 6,
           padding: '7px 12px', background: '#1a1a1a', border: '1px solid #262626',
           borderRadius: 8, color: '#9a9a9a', fontSize: 12, cursor: 'pointer',
-          opacity: state !== 'idle' ? 0.6 : 1, transition: 'all 0.15s',
+          opacity: loading ? 0.6 : 1, transition: 'all 0.15s', whiteSpace: 'nowrap',
         }}
       >
-        {icon}
-        <span>{state === 'done' ? 'Done' : 'Backfill'}</span>
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" className={loading ? 'animate-spin' : ''}>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span>{label}</span>
+        <svg width="9" height="9" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
       </button>
-      <div className="absolute right-0 top-full mt-2 w-60 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10"
-        style={{
-          background: '#141414', border: '1px solid #262626',
-          borderRadius: 8, padding: '8px 12px',
-          fontSize: 11.5, color: '#9a9a9a', lineHeight: 1.5,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-        }}>
-        Pulls all Reddit posts from the last 24h across your search terms — useful after a server restart to catch up on missed posts.
-      </div>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
+          <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: '#141414', border: '1px solid #262626', borderRadius: 8, overflow: 'hidden', zIndex: 20, minWidth: 150, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+            {RUN_WINDOWS.map((w) => (
+              <button key={w.value} onClick={() => run(w)}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', background: 'none', border: 'none', color: '#cfcfcf', fontSize: 12, cursor: 'pointer' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#242424')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>
+                {w.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

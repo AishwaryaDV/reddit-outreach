@@ -9,7 +9,7 @@ from random import randint
 import httpx
 
 from app.config import (
-    SEARCH_TERMS, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX,
+    SEARCH_TERMS, SUBREDDIT_SOURCES, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX,
     SEARCH_TERM_DELAY_SECONDS, SEARCH_BACKOFF_SECONDS,
 )
 from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts, get_search_terms, get_setting, update_post_engagement
@@ -34,30 +34,38 @@ def get_last_run_at() -> str | None:
     return _last_run_at
 
 
-async def fetch_posts(term: str, time_filter: str = "hour") -> list[dict]:
-    """Newest posts matching `term` from Reddit's anonymous search RSS feed.
-
-    No login/API/credentials — a plain GET. Returns normalised post dicts. On a
-    429 (Reddit throttles anonymous search) we back off and return [] so the
-    sweep stays gentle rather than hammering.
-    """
-    params = {"q": term, "sort": "new", "limit": 25, "type": "link"}
-    if time_filter in ("hour", "day", "week", "month", "all"):
-        params["t"] = time_filter
+async def _fetch_rss(url: str, params: dict, label: str) -> list[dict]:
+    """GET an anonymous Reddit Atom feed and parse it. No login/API/credentials.
+    On a 429 (Reddit throttles anonymous reads) back off and return [] so the
+    sweep stays gentle rather than hammering."""
     async with httpx.AsyncClient(headers=REDDIT_HEADERS, timeout=20, follow_redirects=True) as client:
         try:
-            response = await client.get(REDDIT_SEARCH_RSS, params=params)
+            response = await client.get(url, params=params)
         except httpx.RequestError as e:
-            logger.error("Reddit RSS request failed for '%s': %s", term, e)
+            logger.error("Reddit RSS request failed for %s: %s", label, e)
             return []
     if response.status_code == 429:
-        logger.warning("Reddit search rate-limited (429) for '%s' — backing off %ss", term, SEARCH_BACKOFF_SECONDS)
+        logger.warning("Reddit RSS rate-limited (429) for %s — backing off %ss", label, SEARCH_BACKOFF_SECONDS)
         await asyncio.sleep(SEARCH_BACKOFF_SECONDS)
         return []
     if response.status_code != 200:
-        logger.warning("Reddit RSS returned %s for term: %s", response.status_code, term)
+        logger.warning("Reddit RSS returned %s for %s", response.status_code, label)
         return []
     return _parse_atom(response.text)
+
+
+async def fetch_posts(term: str, time_filter: str = "hour") -> list[dict]:
+    """Newest posts matching `term` from Reddit's anonymous search RSS feed."""
+    params = {"q": term, "sort": "new", "limit": 25, "type": "link"}
+    if time_filter in ("hour", "day", "week", "month", "all"):
+        params["t"] = time_filter
+    return await _fetch_rss(REDDIT_SEARCH_RSS, params, f"term '{term}'")
+
+
+async def fetch_subreddit_posts(sub: str) -> list[dict]:
+    """Newest posts from r/<sub> via its anonymous new.rss feed — a dense source
+    of real hiring posts the global search misses. The scorer filters seekers."""
+    return await _fetch_rss(f"https://www.reddit.com/r/{sub}/new.rss", {"limit": 25}, f"r/{sub}")
 
 
 def _parse_atom(xml_text: str) -> list[dict]:
@@ -119,7 +127,7 @@ _NO_PAY_PHRASES = [
 _PLATFORM_BLOCKLIST = ["micro1", "mercor"]
 
 _SUBREDDIT_BLOCKLIST = [
-    "jobboards", "networkingjobs", "forhire",
+    "jobboards", "networkingjobs",
 ]
 
 _IRRELEVANT_STACKS = [
@@ -200,6 +208,12 @@ def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = ""
     if "[for hire]" in title_lower:
         return True
 
+    # Automated job-board aggregator bots repost corporate listings as
+    # "📢 [Company] [HIRING] a [Role]!" / "[HIRING] a [Role]! in [Loc]" — not
+    # direct freelance hires, and there's no human author to DM.
+    if title.strip().startswith("📢") or re.search(r"\[hiring\]\s+a\s+.+!", title_lower):
+        return True
+
     # No content
     if not body_clean or body_clean in ("[deleted]", "[removed]"):
         return True
@@ -259,9 +273,11 @@ def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = ""
     return False
 
 
-async def process_term(term: str, recent_drafts: list[str], time_filter: str = "hour", seen_author_titles: set | None = None):
-    posts = await fetch_posts(term, time_filter)
+async def _process_posts(posts: list[dict], recent_drafts: list[str], seen_author_titles: set | None = None) -> tuple[int, int]:
+    """Dedup, pre-filter, score, and persist a batch of fetched posts.
+    Returns (opportunities_saved, rejects_saved)."""
     new_count = 0
+    reject_count = 0
 
     for post in posts:
         reddit_post_id = post.get("id")
@@ -302,6 +318,24 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
         draft = result.get("draft", "")
 
         if score <= 2:
+            # Phase 11 — persist rejects for audit (no draft, message, or
+            # notification). Lets us answer "did we miss a lead?" by scanning the
+            # Rejected tab instead of re-running the LLM; auto-purged by the
+            # 30-day retention sweep.
+            await save_post({
+                "reddit_post_id": reddit_post_id,
+                "subreddit": subreddit,
+                "title": title,
+                "body": body,
+                "author": author,
+                "posted_at": posted_at,
+                "score": score,
+                "score_reason": reason,
+                "status": "rejected",
+                "num_comments": post.get("num_comments", 0),
+                "reddit_upvotes": post.get("score", 0),
+            })
+            reject_count += 1
             continue
 
         post_data = {
@@ -350,8 +384,22 @@ async def process_term(term: str, recent_drafts: list[str], time_filter: str = "
             if len(recent_drafts) > 5:
                 recent_drafts.pop()
 
-    if new_count:
-        logger.info("Term '%s' — %d new post(s) saved", term, new_count)
+    return new_count, reject_count
+
+
+async def process_term(term: str, recent_drafts: list[str], time_filter: str = "hour", seen_author_titles: set | None = None) -> int:
+    posts = await fetch_posts(term, time_filter)
+    new_count, reject_count = await _process_posts(posts, recent_drafts, seen_author_titles)
+    if new_count or reject_count:
+        logger.info("Term '%s' — %d opportunity, %d rejected", term, new_count, reject_count)
+    return new_count
+
+
+async def process_subreddit(sub: str, recent_drafts: list[str], seen_author_titles: set | None = None) -> int:
+    posts = await fetch_subreddit_posts(sub)
+    new_count, reject_count = await _process_posts(posts, recent_drafts, seen_author_titles)
+    if new_count or reject_count:
+        logger.info("r/%s — %d opportunity, %d rejected", sub, new_count, reject_count)
     return new_count
 
 
@@ -396,6 +444,15 @@ async def run_watcher(time_filter: str = "hour"):
                 logger.exception("Term '%s' failed — continuing with remaining terms", term)
             if i < len(active_terms) - 1:
                 await asyncio.sleep(SEARCH_TERM_DELAY_SECONDS)
+
+        # Poll targeted subreddit new-feeds too — denser in real gigs than the
+        # global search. Same gentle pacing; the scorer filters seekers/noise.
+        for sub in SUBREDDIT_SOURCES:
+            await asyncio.sleep(SEARCH_TERM_DELAY_SECONDS)
+            try:
+                await process_subreddit(sub, recent_drafts, seen_author_titles)
+            except Exception:
+                logger.exception("r/%s failed — continuing with remaining sources", sub)
 
         global _last_run_at
         _last_run_at = datetime.now(tz=timezone.utc).isoformat()
