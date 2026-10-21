@@ -127,7 +127,7 @@ _NO_PAY_PHRASES = [
 _PLATFORM_BLOCKLIST = ["micro1", "mercor"]
 
 _SUBREDDIT_BLOCKLIST = [
-    "jobboards", "networkingjobs", "forhire",
+    "jobboards", "networkingjobs",
 ]
 
 _IRRELEVANT_STACKS = [
@@ -206,6 +206,12 @@ def is_obvious_skip(title: str, body: str, subreddit: str = "", author: str = ""
 
     # Poster is offering services, not hiring
     if "[for hire]" in title_lower:
+        return True
+
+    # Automated job-board aggregator bots repost corporate listings as
+    # "📢 [Company] [HIRING] a [Role]!" / "[HIRING] a [Role]! in [Loc]" — not
+    # direct freelance hires, and there's no human author to DM.
+    if title.strip().startswith("📢") or re.search(r"\[hiring\]\s+a\s+.+!", title_lower):
         return True
 
     # No content
