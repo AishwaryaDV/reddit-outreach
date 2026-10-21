@@ -40,7 +40,7 @@ SUBREDDIT_SOURCES = [s.strip() for s in os.getenv(
 # RSS can't reach. Use a THROWAWAY account's cookie for reads; the main account
 # is only for DM-sending later. Empty = fall back to the anonymous RSS feed.
 REDDIT_COOKIE = os.getenv("REDDIT_COOKIE", "").strip()
-SEARCH_SORT = os.getenv("SEARCH_SORT", "new")      # 'new' = freshest (DM first); 'relevance' = best match
+SEARCH_SORT = os.getenv("SEARCH_SORT", "relevance")  # 'relevance' surfaces real gigs (bots dominate 'new'); 'new' = freshest
 SEARCH_LIMIT = int(os.getenv("SEARCH_LIMIT", "100"))
 
 WATCHER_INTERVAL_MINUTES = 10
