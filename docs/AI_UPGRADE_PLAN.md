@@ -222,6 +222,75 @@ a recall gap: the scorer is well-calibrated but the search feeds it ~0 real dev-
 
 ---
 
+## AI-Engineering Roadmap (post-ingestion) — the canonical plan
+
+reddit-outreach is the showcase AI/LLM project: production-grade evals, tracing, routing,
+guardrails, context engineering. Each item below maps to a concept named in AI-engineering job
+descriptions. Sequence: **A** unblocks the credibility story; **B–D** are small high-signal adds;
+**E** is the meatiest. Picked up after PR #7 (golden labeling) lands.
+
+**Already built (don't re-do):** eval harness + labeler + replay + `PROMPT_VERSION` tagging;
+custom observability (`llm_calls` + `/metrics`); budget-based model routing (Claude→Gemini
+overflow); composed prompts (rubric + post + recent drafts for anti-bot variation). The gaps:
+
+### A — Evals + "what fails" write-up · [JD: evals, "opinion on what fails", "tuned for accuracy"]
+- **Refresh golden candidates (prereq, mine):** gentle authenticated relevance fetch across the
+  search terms once the IP cools, oversampled for a balanced mix of real opportunities + rejects
+  (NOT the old noisy RSS batch) → `evals/data/candidates.jsonl`.
+- **Label (owner):** `scripts/label.py` → `golden.jsonl` (~60–100, balanced).
+- **Run** the harness for BOTH v1 and v2 (replayable): precision/recall/F1 @ SAVE_THRESHOLD,
+  confusion matrix, Spearman, MAE, parse-fail %, cost/latency → `RESULTS.md`.
+- **Write** `docs/what-fails.md`: the real failure types + fixes + measured delta — v1 over-
+  rejecting crypto/backend/small gigs (→ v2 profile+rubric), `search.json`→RSS recall collapse,
+  bot-firehose under `sort=new` (→ relevance), 403 throttling (→ backoff). The centerpiece artifact.
+- **Done when:** `RESULTS.md` shows v1 vs v2 numbers and `what-fails.md` explains each failure + fix.
+
+### B — Tracing with a standard tool · [JD: tracing, observability, monitoring]
+- **Build:** add Langfuse (free Hobby tier) to `llm_client.complete()` — trace every call (prompt,
+  response, model/backend, tokens, cost, latency, step, prompt_version, parse_ok). Keep the custom
+  `llm_calls` + `/metrics` (shows you can build one AND wire a standard tool).
+- **Done when:** a scoring run appears as traces in Langfuse with per-step cost/latency.
+
+### C — Difficulty-based model routing · [JD: model routing, cost/quality]
+- **Build:** route by step difficulty, not just budget — a cheap/nano model for a fast triage
+  ("plausibly a real hire post?") before the expensive full score+draft on a stronger model; skip
+  the expensive call on a confident-negative triage. Report the cost + quality (precision/recall)
+  difference vs always-strong, in `RESULTS.md`.
+- **Done when:** routed pipeline shows a measured cost drop at ~equal accuracy.
+
+### D — Context engineering · [JD: context engineering]
+- **Build:** stop passing raw 10k–40k-char bodies to the scorer. Compress: keep the hiring-relevant
+  head+tail / extract the signal section, cap tokens, strip boilerplate. Document what goes into the
+  prompt, what gets compressed and why, and how it was tested (eval delta + token/cost drop). Also
+  document the anti-bot recent-drafts window.
+- **Done when:** body tokens bounded; context-engineering note written; no eval regression.
+
+### E — Guardrails · [JD: guardrails]
+- **Build:** (1) output **URL allowlist** — drafts may only contain the real portfolio URL, never a
+  hallucinated/injected link; (2) **prompt-injection defense** — treat post bodies as untrusted,
+  neutralize "ignore previous instructions"-style content; (3) **LLM-judge** grading draft quality
+  (3-line rule, no rate talk, varied) before a draft is eligible to send; (4) **profile.yaml** of the
+  owner's facts so drafts can't fabricate experience.
+- **Done when:** a hostile/injected post can't change the score or leak a bad link; the judge gates drafts.
+
+### F — Threshold tuning + CI eval gate · [Phase 5]
+- Tune SAVE_THRESHOLD from the golden PR curve; add a CI job that runs the eval in replay and fails
+  the build on a regression (needs `GEMINI_API_KEY` repo secret for non-replay runs).
+
+### G — README + housekeeping · [Phase 8]
+- Root README: one-line pitch, demo GIF, Mermaid architecture, results table (from `RESULTS.md`),
+  design tradeoffs, how-to-run + how-to-eval, limitations — with `what-fails.md` as the headline.
+
+### H — Security + deploy · [Phase 9]
+- Bearer-token auth + rate limiting on the API; deploy to the Ubuntu server (nginx + systemd + local
+  Postgres), `DRY_RUN` intentional, watcher alive under systemd (see Phase 9 above).
+
+### Parallel — Frontend TypeScript migration
+- Convert the Vite/React SPA from JS to TS (branch `feat/ts-migration`). Type safety + consistency
+  with Offroute (already TS). Shipped as its own PR.
+
+---
+
 ## `llm_calls` table (Alembic migration at Phase 1; schema reference)
 
 ```sql
