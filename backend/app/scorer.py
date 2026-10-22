@@ -13,7 +13,7 @@ from app.schemas import ScoreResult
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 # Reported by GET /status.
 SCORER_MODE = "replay" if LLM_MODE == "replay" else "claude_sdk+gemini"
 
