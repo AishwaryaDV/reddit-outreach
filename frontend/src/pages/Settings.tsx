@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { API, api } from '../lib/api'
+import type { Config, SearchTerm } from '../types'
 
 export default function Settings() {
   return (
@@ -17,7 +18,7 @@ export default function Settings() {
 }
 
 function NotificationsSection() {
-  const [enabled, setEnabled] = useState(null)
+  const [enabled, setEnabled] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState(false)
 
@@ -78,8 +79,8 @@ function NotificationsSection() {
 }
 
 function AutomationSection() {
-  const [config, setConfig] = useState(null)
-  const [saving, setSaving] = useState(null)
+  const [config, setConfig] = useState<Config | null>(null)
+  const [saving, setSaving] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`${API}/config`).then((r) => r.json()).then(setConfig).catch(() => {})
@@ -115,7 +116,7 @@ function AutomationSection() {
             : 'Only messages you explicitly approve are sent (recommended)'}
           on={!!config?.auto_send_enabled}
           disabled={!config || saving === 'auto_send_enabled'}
-          onClick={() => toggle('auto_send_enabled', !config.auto_send_enabled)}
+          onClick={() => toggle('auto_send_enabled', !config?.auto_send_enabled)}
         />
         <ToggleRow
           label="Scoring enabled"
@@ -124,7 +125,7 @@ function AutomationSection() {
             : 'New posts are scored and drafted by the LLM'}
           on={config ? !!config.scoring_enabled : true}
           disabled={!config || saving === 'scoring_enabled'}
-          onClick={() => toggle('scoring_enabled', !config.scoring_enabled)}
+          onClick={() => toggle('scoring_enabled', !config?.scoring_enabled)}
         />
       </div>
 
@@ -160,7 +161,7 @@ function ToggleRow({ label, desc, on, disabled, onClick }) {
 }
 
 function SearchTermsSection() {
-  const [terms, setTerms] = useState([])
+  const [terms, setTerms] = useState<SearchTerm[]>([])
   const [loading, setLoading] = useState(true)
   const [newTerm, setNewTerm] = useState('')
   const [adding, setAdding] = useState(false)
@@ -284,9 +285,9 @@ function SearchTermsSection() {
 }
 
 function ConfigSection() {
-  const [config, setConfig] = useState(null)
+  const [config, setConfig] = useState<Config | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(null)
+  const [saving, setSaving] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`${API}/config`)

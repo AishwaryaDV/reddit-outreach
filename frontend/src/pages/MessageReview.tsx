@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import type { Post, MessageWithPost } from '../types'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { timeAgo } from '../lib/time'
@@ -34,18 +35,18 @@ function scoreColor(score) {
 export default function MessageReview() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [post, setPost] = useState(null)
-  const [message, setMessage] = useState(null)
+  const [post, setPost] = useState<Post | null>(null)
+  const [message, setMessage] = useState<MessageWithPost | null>(null)
   const [draft, setDraft] = useState('')
-  const [posts, setPosts] = useState([])
+  const [posts, setPosts] = useState<MessageWithPost[]>([])
   const [loading, setLoading] = useState(true)
-  const [action, setAction] = useState(null)
+  const [action, setAction] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState('newest')
   const [loadingMore, setLoadingMore] = useState(false)
   const offsetRef = useRef(0)
   const hasMoreRef = useRef(true)
   const loadingRef = useRef(false)
-  const sentinelRef = useRef(null)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
   // Initial sidebar fetch — reset on sort change
   useEffect(() => {
@@ -256,7 +257,7 @@ export default function MessageReview() {
 }
 
 function SidebarItem({ post, selected, onClick }) {
-  const ref = useRef(null)
+  const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (selected && ref.current) {
@@ -395,17 +396,17 @@ function DraftPanel({ message, draft, setDraft, action, onApprove, onDisapprove 
 }
 
 function Countdown({ sendAfter }) {
-  const [secondsLeft, setSecondsLeft] = useState(null)
-  const ref = useRef(null)
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
+  const ref = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     const tick = () => {
-      const diff = Math.max(0, Math.floor((new Date(sendAfter) - Date.now()) / 1000))
+      const diff = Math.max(0, Math.floor((new Date(sendAfter).getTime() - Date.now()) / 1000))
       setSecondsLeft(diff)
     }
     tick()
     ref.current = setInterval(tick, 1000)
-    return () => clearInterval(ref.current)
+    return () => { if (ref.current) clearInterval(ref.current) }
   }, [sendAfter])
 
   if (secondsLeft === null) return null
@@ -451,7 +452,7 @@ function ScoreRing({ score, size = 36 }) {
   )
 }
 
-function SubBadge({ sub, small }) {
+function SubBadge({ sub, small }: { sub?: string; small?: boolean }) {
   const color = subColor(sub)
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: small ? 4 : 6 }}>

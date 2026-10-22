@@ -1,7 +1,15 @@
 export const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+interface ApiOptions {
+  method?: string
+  body?: unknown
+}
+
 // Thin wrapper around fetch for the backend JSON API. Returns {ok, status, data}.
-export async function api(path, { method = 'GET', body } = {}) {
+export async function api<T = any>(
+  path: string,
+  { method = 'GET', body }: ApiOptions = {},
+): Promise<{ ok: boolean; status: number; data: T }> {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,

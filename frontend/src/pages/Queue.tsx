@@ -75,7 +75,7 @@ function QueueCard({ item, onViewPost, onSent }) {
   const sendAfter = item.send_after ? new Date(item.send_after) : null
   const isPast = sendAfter && sendAfter < new Date()
   const [sending, setSending] = useState(false)
-  const [result, setResult] = useState(null)
+  const [result, setResult] = useState<{ sent: boolean; dry_run?: boolean; reason?: string } | null>(null)
 
   async function handleSendNow() {
     if (sending) return
