@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { API, api } from '../lib/api'
+import type { Post } from '../types'
 import { timeAgo } from '../lib/time'
 import SetupChecklist from '../components/SetupChecklist'
 import CustomSelect from '../components/CustomSelect'
@@ -53,11 +54,11 @@ function subColor(sub) {
 }
 
 export default function Feed() {
-  const [posts, setPosts] = useState([])
+  const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
   const [timeFilter, setTimeFilter] = useState('today')
   const [statusTab, setStatusTab] = useState('all')
-  const [lastRunAt, setLastRunAt] = useState(null)
+  const [lastRunAt, setLastRunAt] = useState<string | null>(null)
   const [selectedPostId, setSelectedPostId] = useState(() => sessionStorage.getItem('lastOpenedPostId'))
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
@@ -66,8 +67,8 @@ export default function Feed() {
   const [total, setTotal] = useState(0)
   const [liveQuery, setLiveQuery] = useState('')
   const [liveSearching, setLiveSearching] = useState(false)
-  const [liveResult, setLiveResult] = useState(null)
-  const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [liveResult, setLiveResult] = useState<{ error?: boolean; new_posts?: number } | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -249,7 +250,7 @@ export default function Feed() {
             <p style={{ fontSize: 12, marginTop: 12, color: liveResult.error ? '#ff5d6c' : '#22d3a8' }}>
               {liveResult.error
                 ? 'Search failed — is the backend running?'
-                : liveResult.new_posts > 0
+                : (liveResult.new_posts ?? 0) > 0
                   ? `+${liveResult.new_posts} new post${liveResult.new_posts !== 1 ? 's' : ''} added to feed`
                   : 'No new posts found'}
             </p>
