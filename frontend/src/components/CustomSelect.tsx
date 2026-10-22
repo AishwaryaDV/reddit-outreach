@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 
 export default function CustomSelect({ icon, value, onChange, options }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef(null)
+  const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     function handle(e) {
