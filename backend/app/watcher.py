@@ -89,13 +89,17 @@ async def fetch_posts_json(term: str, time_filter: str = "week") -> list[dict]:
         except httpx.RequestError as e:
             logger.error("search.json request failed for '%s': %s", term, e)
             return []
-    if resp.status_code == 429:
-        logger.warning("search.json rate-limited (429) for '%s' — backing off %ss", term, SEARCH_BACKOFF_SECONDS)
+    if resp.status_code in (429, 403):
+        # 429 = rate-limited; 403 = session throttled/flagged (Reddit serves the
+        # login wall). Both mean "slow down" — back off before falling back to RSS
+        # rather than hammering. A genuinely expired cookie also lands here; the
+        # backoff is harmless and we still fall through to RSS afterward.
+        logger.warning("search.json %s for '%s' — backing off %ss, then RSS fallback",
+                       resp.status_code, term, SEARCH_BACKOFF_SECONDS)
         await asyncio.sleep(SEARCH_BACKOFF_SECONDS)
         return []
     if resp.status_code != 200 or "application/json" not in resp.headers.get("content-type", ""):
-        logger.warning("search.json returned %s for '%s' — cookie invalid/expired? Falling back to RSS",
-                       resp.status_code, term)
+        logger.warning("search.json returned %s for '%s' — falling back to RSS", resp.status_code, term)
         return []
     return _parse_json(resp.text)
 
