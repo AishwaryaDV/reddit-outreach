@@ -35,6 +35,14 @@ SUBREDDIT_SOURCES = [s.strip() for s in os.getenv(
     "jobbit,remotejs,hiring",
 ).split(",") if s.strip()]
 
+# Authenticated search via a logged-in session cookie (replays the browser) —
+# unlocks full search.json results (limit 100, the real posts) that anonymous
+# RSS can't reach. Use a THROWAWAY account's cookie for reads; the main account
+# is only for DM-sending later. Empty = fall back to the anonymous RSS feed.
+REDDIT_COOKIE = os.getenv("REDDIT_COOKIE", "").strip()
+SEARCH_SORT = os.getenv("SEARCH_SORT", "relevance")  # 'relevance' surfaces real gigs (bots dominate 'new'); 'new' = freshest
+SEARCH_LIMIT = int(os.getenv("SEARCH_LIMIT", "100"))
+
 WATCHER_INTERVAL_MINUTES = 10
 APPROVAL_WINDOW_MIN = 2
 APPROVAL_WINDOW_MAX = 5

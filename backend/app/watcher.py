@@ -1,5 +1,6 @@
 import asyncio
 import html
+import json
 import logging
 import re
 import xml.etree.ElementTree as ET
@@ -11,6 +12,7 @@ import httpx
 from app.config import (
     SEARCH_TERMS, SUBREDDIT_SOURCES, APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX,
     SEARCH_TERM_DELAY_SECONDS, SEARCH_BACKOFF_SECONDS,
+    REDDIT_COOKIE, SEARCH_SORT, SEARCH_LIMIT,
 )
 from app.database import post_exists, save_post, save_message, get_recent_drafts, purge_old_posts, get_search_terms, get_setting, update_post_engagement
 from app.scorer import score_and_draft
@@ -25,6 +27,7 @@ REDDIT_HEADERS = {
     "Accept": "application/atom+xml",
 }
 REDDIT_SEARCH_RSS = "https://www.reddit.com/search.rss"
+REDDIT_SEARCH_JSON = "https://www.reddit.com/search.json"
 _ATOM = {"a": "http://www.w3.org/2005/Atom"}
 
 _last_run_at: str | None = None
@@ -55,11 +58,73 @@ async def _fetch_rss(url: str, params: dict, label: str) -> list[dict]:
 
 
 async def fetch_posts(term: str, time_filter: str = "hour") -> list[dict]:
-    """Newest posts matching `term` from Reddit's anonymous search RSS feed."""
+    """Posts for `term`. Prefers authenticated search.json (full results via the
+    session cookie — limit 100, real posts); falls back to the anonymous RSS feed
+    if no cookie is set or the authenticated call comes back empty."""
+    if REDDIT_COOKIE:
+        posts = await fetch_posts_json(term, time_filter)
+        if posts:
+            return posts
+        # cookie path returned nothing (expired / throttled) — try RSS
     params = {"q": term, "sort": "new", "limit": 25, "type": "link"}
     if time_filter in ("hour", "day", "week", "month", "all"):
         params["t"] = time_filter
     return await _fetch_rss(REDDIT_SEARCH_RSS, params, f"term '{term}'")
+
+
+async def fetch_posts_json(term: str, time_filter: str = "week") -> list[dict]:
+    """Authenticated search via the session cookie — replays the browser to get
+    the full search.json results anonymous RSS can't (limit 100, real posts, no
+    bot-firehose cap). Returns [] if no cookie or on error so fetch_posts can
+    fall back to RSS."""
+    if not REDDIT_COOKIE:
+        return []
+    params = {"q": term, "sort": SEARCH_SORT, "limit": SEARCH_LIMIT, "type": "link", "raw_json": 1}
+    if time_filter in ("hour", "day", "week", "month", "all"):
+        params["t"] = time_filter
+    headers = {**REDDIT_HEADERS, "Accept": "application/json", "Cookie": REDDIT_COOKIE}
+    async with httpx.AsyncClient(headers=headers, timeout=25, follow_redirects=True) as client:
+        try:
+            resp = await client.get(REDDIT_SEARCH_JSON, params=params)
+        except httpx.RequestError as e:
+            logger.error("search.json request failed for '%s': %s", term, e)
+            return []
+    if resp.status_code == 429:
+        logger.warning("search.json rate-limited (429) for '%s' — backing off %ss", term, SEARCH_BACKOFF_SECONDS)
+        await asyncio.sleep(SEARCH_BACKOFF_SECONDS)
+        return []
+    if resp.status_code != 200 or "application/json" not in resp.headers.get("content-type", ""):
+        logger.warning("search.json returned %s for '%s' — cookie invalid/expired? Falling back to RSS",
+                       resp.status_code, term)
+        return []
+    return _parse_json(resp.text)
+
+
+def _parse_json(text: str) -> list[dict]:
+    """Parse a Reddit search.json listing into normalised post dicts (same shape
+    as _parse_atom, but with full selftext bodies)."""
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("search.json returned non-JSON (login wall?)")
+        return []
+    posts = []
+    for child in data.get("data", {}).get("children", []):
+        d = child.get("data", {})
+        if not d.get("id"):
+            continue
+        posts.append({
+            "id": d.get("id", ""),
+            "title": d.get("title", "") or "",
+            "selftext": d.get("selftext", "") or "",
+            "author": d.get("author", "") or "",
+            "subreddit": d.get("subreddit", "") or "",
+            "created_utc": d.get("created_utc", 0) or 0,
+            "num_comments": d.get("num_comments", 0) or 0,
+            "score": d.get("score", 0) or 0,
+            "over_18": bool(d.get("over_18", False)),
+        })
+    return posts
 
 
 async def fetch_subreddit_posts(sub: str) -> list[dict]:
