@@ -102,7 +102,7 @@ export default function Metrics() {
   )
 }
 
-function Card({ label, value, sub }) {
+function Card({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div className="rounded-xl border border-white/8 bg-white/3 p-4">
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
@@ -112,7 +112,7 @@ function Card({ label, value, sub }) {
   )
 }
 
-function Section({ title, children }) {
+function Section({ title, children }: { title: string; children: any }) {
   return (
     <div className="rounded-xl border border-white/8 bg-white/3 p-4">
       <div className="text-xs uppercase tracking-wide text-slate-500 mb-3">{title}</div>
@@ -127,7 +127,7 @@ const BACKEND_COLORS = {
   replay: 'bg-slate-500/60',
 }
 
-function BackendBar({ data }) {
+function BackendBar({ data }: { data: Record<string, number> }) {
   const entries = Object.entries(data || {})
   const total = entries.reduce((sum, [, v]) => sum + v, 0)
   if (total === 0) return <span className="text-slate-500 text-sm">no calls yet</span>
@@ -153,7 +153,7 @@ function BackendBar({ data }) {
   )
 }
 
-function KeyVals({ data, empty }) {
+function KeyVals({ data, empty }: { data: Record<string, number | string>; empty: string }) {
   const entries = Object.entries(data || {})
   if (entries.length === 0) return <span className="text-slate-500 text-sm">{empty}</span>
   return (
