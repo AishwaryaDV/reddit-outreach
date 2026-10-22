@@ -1,4 +1,4 @@
-export function timeAgo(dateStr) {
+export function timeAgo(dateStr: string | null | undefined): string {
   if (!dateStr) return ''
   const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60_000)
   if (mins < 1) return 'just now'
@@ -9,9 +9,9 @@ export function timeAgo(dateStr) {
   return `${days}d ago`
 }
 
-export function timeUntil(dateStr) {
+export function timeUntil(dateStr: string | null | undefined): string | null {
   if (!dateStr) return null
-  const diff = new Date(dateStr) - Date.now()
+  const diff = new Date(dateStr).getTime() - Date.now()
   if (diff <= 0) return null
   const mins = Math.ceil(diff / 60_000)
   if (mins < 60) return `${mins}m`
