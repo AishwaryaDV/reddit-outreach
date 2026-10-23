@@ -193,7 +193,7 @@ async def _call_gemini(system_prompt: str, user_message: str, fell_back: bool, s
     raise last_err if last_err else RuntimeError("gemini: all models failed")
 
 
-async def complete(step: str, system_prompt: str, user_message: str, schema=None) -> LLMResult:
+async def complete(step: str, system_prompt: str, user_message: str, schema=None, prefer_cheap: bool = False) -> LLMResult:
     """One model call for `step`. Claude primary within its rate budget, Gemini
     overflow/fallback (immediate — never waits). `schema` (a Pydantic model) is
     enforced natively on Gemini; on Claude it's enforced by the prompt + the
@@ -220,7 +220,9 @@ async def complete(step: str, system_prompt: str, user_message: str, schema=None
         return result
 
     result = None
-    tried_claude = await _claude_budget_available()
+    # prefer_cheap (a triaged-out post) skips Claude and scores on Gemini — a cheap
+    # second-layer rubric pass instead of dropping the post.
+    tried_claude = (not prefer_cheap) and await _claude_budget_available()
     if tried_claude:
         try:
             result = await _call_claude(system_prompt, user_message)

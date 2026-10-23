@@ -121,15 +121,13 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
         logger.warning("Daily LLM quota reached — scoring paused for today")
         return None
 
-    # Difficulty routing — cheap triage first; only a CONFIDENT "not a hire" skips
-    # the expensive deep score (protects recall). Saved as a reject for audit.
+    # Difficulty routing — cheap triage first. A CONFIDENT "not a hire" still gets a
+    # full rubric score, just on cheap Gemini (route, don't drop — so a wrong triage
+    # can't silently kill a lead); only triaged-in posts spend the strong Claude tier.
     is_hire, conf = await triage(title, body)
-    if not is_hire and conf >= TRIAGE_SKIP_CONFIDENCE:
-        logger.info("Triaged out (not_hire, conf=%.2f) — skipping deep score", conf)
-        return {
-            "score": 1, "reason": f"triaged out (not a hire, confidence {conf:.2f})",
-            "draft": "", "label": "not_opportunity", "red_flags": [], "budget_mentioned": False,
-        }
+    triaged_out = not is_hire and conf >= TRIAGE_SKIP_CONFIDENCE
+    if triaged_out:
+        logger.info("Triaged out (not_hire, conf=%.2f) — full score on cheap tier", conf)
 
     system_prompt = await _build_system_prompt()
     recent_context = ""
@@ -137,7 +135,7 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
         recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
     user_message = f"Post title: {title}\n\nPost body: {_compress_body(body) or '(no body)'}{recent_context}"
 
-    result = await complete("score", system_prompt, user_message, schema=ScoreResult)
+    result = await complete("score", system_prompt, user_message, schema=ScoreResult, prefer_cheap=triaged_out)
     sr, err = _validate(result.text)
 
     # Retry once with the validation error appended — let the model self-correct.
@@ -146,7 +144,7 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
             f"{user_message}\n\nYour previous reply was invalid ({err}). "
             "Return ONLY valid JSON with the required fields."
         )
-        result = await complete("score", system_prompt, retry_message, schema=ScoreResult)
+        result = await complete("score", system_prompt, retry_message, schema=ScoreResult, prefer_cheap=triaged_out)
         sr, err = _validate(result.text)
 
     await log_call("score", result, None, PROMPT_VERSION, parse_ok=sr is not None)
