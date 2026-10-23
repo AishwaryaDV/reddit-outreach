@@ -263,6 +263,12 @@ dependency. Revisit only if a specific role demands Langfuse/OTel by name.
   - Per-step model selection in `llm_client`: `step="triage"` → Flash-Lite; `step="score"` → Claude
     (rate-budgeted) → Gemini overflow (keeps the Pro protection). `step` already logged per `llm_calls` row.
 - **Test:** on local posts, triage cheaply drops obvious-negatives; borderline posts still reach the strong tier.
+- **Built (route-not-drop):** a confident `not_hire` is NOT dropped — it still gets a full rubric
+  score, just on cheap Gemini (`prefer_cheap`); only triaged-in posts spend the Claude tier. So a
+  wrong triage costs quality (scored on the cheap model), never a silently-killed lead.
+- **TODO — validate triage against the golden set:** (1) **triage recall** — it must not route a
+  labeled opportunity to the cheap tier where it then scores < 3; (2) tune `TRIAGE_SKIP_CONFIDENCE`
+  / the triage model (flash-lite → flash) if it does; (3) report how many posts route cheap (the cost win).
 - **Report (needs golden set):** cost + quality (precision/recall) of **routed** vs **always-strong** in
   `RESULTS.md` — the cost/quality tradeoff story.
 - **Done when:** routed pipeline shows a measured cost drop at ~equal accuracy (quality after labeling).
