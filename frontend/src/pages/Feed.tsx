@@ -362,6 +362,11 @@ function DenseRow({ post, highlight, isConfirming, onDM, onDeleteRequest, onDele
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <AuthorIcon />
           <span style={{ fontSize: 11, color: '#7a7a7a' }}>u/{post.author}</span>
+          {post.contact_links?.some((c) => c.kind === 'form' || c.kind === 'email') && (
+            <span style={{ fontSize: 9.5, fontWeight: 600, color: '#8fbf6f', background: '#1c3310', border: '1px solid #2f5220', borderRadius: 5, padding: '1px 6px', flexShrink: 0 }}>
+              apply link
+            </span>
+          )}
           {post.score_reason && (
             <>
               <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
