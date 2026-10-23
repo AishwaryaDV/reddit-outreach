@@ -6,10 +6,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.config import PORTFOLIO_URL, LLM_MODE
+from app.config import PORTFOLIO_URL, LLM_MODE, TRIAGE_SKIP_CONFIDENCE
 from app.database import get_setting
 from app.llm_client import complete, log_call, quota_exceeded
-from app.schemas import ScoreResult
+from app.schemas import ScoreResult, TriageResult
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,51 @@ def _validate(text: str) -> tuple[ScoreResult | None, str | None]:
         return None, "; ".join(err["msg"] for err in e.errors())[:200]
 
 
+# Context engineering — the scorer prompt doesn't need raw 10k-40k-char bodies.
+# Bound the body (keep head + tail, where hiring details cluster), collapse
+# whitespace, and mask URLs (not needed to score, and a token/injection cost).
+BODY_CHAR_CAP = 2500
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _compress_body(body: str | None, cap: int = BODY_CHAR_CAP) -> str:
+    if not body:
+        return ""
+    text = _URL_RE.sub("[link]", re.sub(r"\s+", " ", body)).strip()
+    if len(text) <= cap:
+        return text
+    head = cap * 2 // 3
+    return text[:head].rstrip() + " […] " + text[-(cap - head):].lstrip()
+
+
+@lru_cache
+def _load_triage_prompt() -> str:
+    return (_PROMPTS_DIR.parent / "triage" / "v1.md").read_text()
+
+
+def _validate_triage(text: str) -> TriageResult | None:
+    data = _extract_json(text)
+    if data is None:
+        return None
+    try:
+        return TriageResult.model_validate(data)
+    except ValidationError:
+        return None
+
+
+async def triage(title: str, body: str) -> tuple[bool, float]:
+    """Cheap first-pass: is this plausibly a real paid dev-hire? Returns
+    (is_hire, confidence). On any failure returns (True, 0.0) so the post falls
+    through to the deep score — we never drop a post on a triage error."""
+    user_message = f"Post title: {title}\n\nPost body: {_compress_body(body) or '(no body)'}"
+    result = await complete("triage", _load_triage_prompt(), user_message, schema=TriageResult)
+    tr = _validate_triage(result.text)
+    await log_call("triage", result, None, "triage-v1", parse_ok=tr is not None)
+    if tr is None:
+        return True, 0.0
+    return tr.decision == "hire", tr.confidence
+
+
 async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None = None) -> dict | None:
     """Score a post and draft a DM, validated against the ScoreResult schema.
 
@@ -76,11 +121,21 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
         logger.warning("Daily LLM quota reached — scoring paused for today")
         return None
 
+    # Difficulty routing — cheap triage first; only a CONFIDENT "not a hire" skips
+    # the expensive deep score (protects recall). Saved as a reject for audit.
+    is_hire, conf = await triage(title, body)
+    if not is_hire and conf >= TRIAGE_SKIP_CONFIDENCE:
+        logger.info("Triaged out (not_hire, conf=%.2f) — skipping deep score", conf)
+        return {
+            "score": 1, "reason": f"triaged out (not a hire, confidence {conf:.2f})",
+            "draft": "", "label": "not_opportunity", "red_flags": [], "budget_mentioned": False,
+        }
+
     system_prompt = await _build_system_prompt()
     recent_context = ""
     if recent_drafts:
         recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
-    user_message = f"Post title: {title}\n\nPost body: {body or '(no body)'}{recent_context}"
+    user_message = f"Post title: {title}\n\nPost body: {_compress_body(body) or '(no body)'}{recent_context}"
 
     result = await complete("score", system_prompt, user_message, schema=ScoreResult)
     sr, err = _validate(result.text)
