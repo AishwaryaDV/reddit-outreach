@@ -1,70 +1,93 @@
-# Reddit Outreach
+# Reddit Outreach — an AI pipeline for finding freelance dev gigs
 
-Automated Reddit job-outreach tool. Watches Reddit for hiring posts, scores + drafts a
-personalized DM with Claude, lets you review in a dashboard, and (eventually) auto-sends if you
-don't intervene. Fullstack: FastAPI backend + React/Vite dashboard + self-hosted PostgreSQL.
+Watches Reddit for people hiring developers, **scores** each post for fit (1–10),
+**drafts** a personalized outreach message, and surfaces it in a review dashboard —
+built as a **production-grade LLM pipeline**: evals, model routing, guardrails,
+context engineering, observability, and a human-in-the-loop feedback loop.
 
-> **Status at a glance (2026-10-18):** runs locally on self-hosted Postgres (migrated off
-> Supabase). Auto-send and the never-DM-twice guard are done. Remaining to go live: Reddit's 403
-> on unauthenticated reads (needs a registered app) and backend auth for production. Full detail
-> in [`docs/AI_UPGRADE_PLAN.md`](docs/AI_UPGRADE_PLAN.md), [`docs/STATUS.md`](docs/STATUS.md),
-> [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/BUGS.md`](docs/BUGS.md),
-> [`docs/SECURITY.md`](docs/SECURITY.md).
+> It's a real tool I use — but the point of the repo is the **AI engineering around
+> the model**, not just "call an LLM."
+
+---
+
+## Why this repo is interesting (the AI engineering)
+
+| Concern | What's here |
+|---|---|
+| **Evals** | Hand-labeled golden set + harness: precision/recall/F1, confusion matrix, Spearman, MAE, parse-failure rate, cost/latency. Prompt versions (`v1→v3`) are logged per call so results tie to the exact prompt. |
+| **Model routing** | A cheap **Flash-Lite triage** decides "real paid dev-hire?"; confident cases route to a cheap full-score, promising ones to the stronger **Claude** tier — *route, never drop*, so a wrong triage can't silently kill a lead. |
+| **Guardrails** | Output **URL allowlist** (a draft can only link the portfolio), **prompt-injection defense** (post text sandboxed as data), an **LLM-as-judge** that hard-blocks off-rule drafts, and a `profile.yaml` so drafts can't fabricate experience. Validated by an **adversarial suite (5/5)**. |
+| **Context engineering** | 10k–40k-char post bodies are compressed (head+tail cap, URL masking) before they hit the model — bounded tokens, smaller injection surface. |
+| **Observability** | Every call logs cost, latency, tokens, backend, parse-ok → a live `/metrics` dashboard (p50/p95, funnel, reject distribution). |
+| **Reproducibility** | `LLM_MODE=replay` serves recorded responses — the whole pipeline runs deterministically, no accounts, no cost. |
+| **Cost safety** | Claude (via the Agent SDK) is rate-budgeted; it overflows to Gemini instantly so a time-sensitive post is never missed and the subscription is never drained. |
+| **Human-in-the-loop** | Human-approval by default; a feedback loop lets you **recover** a mis-rejected lead and **log the correction** (feeds the golden set + the next prompt version). |
+
+---
+
+## Pipeline
+
+```mermaid
+flowchart LR
+  R[Reddit search.json] --> F[regex pre-filter<br/>bots / seekers / noise]
+  F --> C[compress body]
+  C --> T{triage<br/>Flash-Lite}
+  T -- confident 'not a hire' --> G1[full score · cheap Gemini]
+  T -- hire / unsure --> G2[full score + draft · Claude → Gemini]
+  G1 --> S[(Postgres)]
+  G2 --> J{judge<br/>Gemini}
+  J -- pass --> D[draft ready + URL allowlist]
+  J -- fail --> W[withhold draft]
+  D --> S
+  W --> S
+  S --> UI[React dashboard:<br/>Feed · Review · Queue · Tracker · Metrics]
+```
+
+Every model call goes through one `llm_client` chokepoint (routing, budgeting,
+logging, replay). Untrusted post text is wrapped as *data, not instructions*
+at every step.
+
+---
 
 ## Stack
-- **Backend:** Python 3.11, FastAPI, APScheduler, httpx/PRAW, Claude (scorer) — `backend/app/`
-- **Frontend:** React + Vite + react-query — `frontend/src/` (talks only to the backend API)
-- **DB:** self-hosted PostgreSQL via SQLAlchemy 2.0 async + Alembic — tables `posts`, `messages`,
-  `search_terms`, `app_settings`, `llm_calls`
-- **Deploy (planned):** self-hosted Ubuntu + nginx (same as the portfolio/offroute apps)
 
-## Run locally
+- **Frontend** — React 19 + **TypeScript** + Vite + Tailwind; 6-page dashboard (Feed, Message Review, Queue, Tracker, Metrics, Settings) with infinite scroll, score rings, tabbed filtering, a 2-pane review workbench; talks only to the backend via react-query polling.
+- **Backend** — FastAPI + **self-hosted PostgreSQL** (async SQLAlchemy 2.0 + Alembic); APScheduler watcher.
+- **LLM** — Claude Haiku (Agent SDK, no API key) + Gemini (Flash / Flash-Lite), behind one client with structured (Pydantic/JSON-schema) outputs + validate-and-retry.
+- **Ingestion** — authenticated `search.json` (session cookie) with relevance sort + 403/429 backoff; multi-tier filtering (regex, cross-post dedup, bot-repost filter); extracts apply links (Google Form / email / Discord) from bodies and surfaces them.
+
+---
+
+## Run it
+
 ```bash
-# Postgres (one-time): create the DB; Alembic builds the schema + seeds terms/settings
-createdb reddit_outreach
-
-# Backend  → http://localhost:8000  (API docs at /docs)
+# Backend
 cd backend
-source venv/bin/activate          # recreate with python3.11 -m venv venv
-pip install -r requirements.txt   # first time only
-alembic upgrade head              # creates tables + seeds search terms/settings
-uvicorn app.main:app --reload --port 8000
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env          # set GEMINI_API_KEY; REDDIT_COOKIE optional (see .env.example)
+alembic upgrade head
+uvicorn app.main:app --port 8000
 
-# Frontend → http://localhost:5173
+# Frontend
 cd frontend
-npm install                       # first time only
-npm run dev
+npm install
+npm run dev                   # http://localhost:5173
 ```
-Requires `backend/.env` (see `backend/.env.example`; set `DATABASE_URL`/`DATABASE_URL_SYNC`) and
-`frontend/.env` (`VITE_API_URL`, defaults to `http://localhost:8000`).
 
-## How it works
-1. **Watcher** (every 10 min) searches Reddit for hiring terms, runs ~17 pre-filters, then
-   scores + drafts with Claude. Posts scoring ≥3 are saved; a draft message is queued `pending`.
-2. **Notifications** email you per saved post (pausable in Settings).
-3. **Dashboard** — Feed → review/approve/edit drafts → Queue (approved) → Tracker (sent + outcome).
-4. **Sender** (dry-run) would auto-send `pending` messages after a 2–5 min window, respecting a
-   daily cap and (planned) a never-DM-twice guardrail.
+Run the scorer with **no accounts / no cost** via replay: `LLM_MODE=replay`.
+Evals (after labeling): `python scripts/label.py` → `python evals/run_scorer_eval.py`.
+Adversarial guardrail check: `python tests/run_adversarial.py`.
 
-## Current blockers / open work
-| Item | State | Where |
-|---|---|---|
-| Reddit `search.json` 403 (unauth reads blocked) | **Blocking ingestion** | ROADMAP §0 / BUG-0 |
-| Supabase → self-hosted Postgres | **Done** | AI_UPGRADE_PLAN 0.5 |
-| Auto-send of pending messages | Done (toggle pending in final phase) | BUG-3 |
-| Never-DM-twice guardrail | Done | BUG-5 |
-| Real scorer (currently MOCK) | Deferred to final steps | ROADMAP §3 / AI_UPGRADE_PLAN |
-| Backend auth (browser DB-write path removed) | Fix before deploy | SECURITY S1 |
-| Reply tracking (Phase 5) | Placeholder | ROADMAP §5 |
-| Deployment (self-host) | Not started | ROADMAP §6 |
+---
 
-User's plan: build everything out first; **auto-DM, real scoring, and deployment are the final
-steps.** Reddit account `Upper-Vehicle2154`, karma ~19.
+## Honest constraints
 
-## Docs
-- [`docs/AI_UPGRADE_PLAN.md`](docs/AI_UPGRADE_PLAN.md) — active phased plan (de-Supabase + AI upgrade)
-- [`docs/STATUS.md`](docs/STATUS.md) — what's built, per phase
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — what's left, in order
-- [`docs/BUGS.md`](docs/BUGS.md) — open + resolved bugs
-- [`docs/SECURITY.md`](docs/SECURITY.md) — security review + pre-deploy checklist
-- [`docs/project-brief.md`](docs/project-brief.md), [`docs/process-and-guardrails.md`](docs/process-and-guardrails.md) — original spec
+- **Ingestion is Reddit-gated.** Reddit killed anonymous `search.json` (403), so reads use an authenticated session cookie; it's rate-limited and relevance-sorted to surface real gigs. The durable fix is the Reddit Data Access Request.
+- **Reddit fights automated DMs** (per-account caps, new-account gates). So the tool's value is **find → score → draft → surface the apply link**; sending is manual through the channel the poster prefers (forms/email land the best hires), with outreach tracked across channels.
+
+---
+
+## Status
+
+Built: ingestion, the full LLM pipeline (routing, structured outputs, prompt versioning, replay, context compression, guardrails), observability, reject-audit, the feedback/recovery loop, contact-link extraction. Remaining: run the eval numbers against the labeled golden set, a CI eval gate, and self-host deployment. See [`docs/AI_UPGRADE_PLAN.md`](docs/AI_UPGRADE_PLAN.md).
