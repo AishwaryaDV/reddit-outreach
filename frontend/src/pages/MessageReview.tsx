@@ -127,6 +127,24 @@ export default function MessageReview() {
     goNext()
   }
 
+  async function handleRestore() {
+    if (action) return
+    setAction('restoring')
+    await api(`/posts/${id}/restore`, { method: 'POST' })
+    setPost((p) => p ? { ...p, status: 'new' } : p)
+    setPosts((prev) => prev.map((p) => p.id === id ? { ...p, status: 'new' } : p))
+    setAction(null)
+  }
+
+  async function handleApplied() {
+    if (action) return
+    setAction('applying')
+    await api(`/posts/${id}/applied`, { method: 'POST' })
+    setPost((p) => p ? { ...p, status: 'applied' } : p)
+    setPosts((prev) => prev.map((p) => p.id === id ? { ...p, status: 'applied' } : p))
+    setAction(null)
+  }
+
   const postUrl = post ? `https://reddit.com/comments/${post.reddit_post_id}` : '#'
 
   return (
@@ -176,6 +194,20 @@ export default function MessageReview() {
             <span style={{ fontSize: 10, color: '#3a3a3a' }}>·</span>
             <span style={{ fontSize: 11.5, color: '#9a9a9a' }}>u/{post.author}</span>
             <div style={{ flex: 1 }} />
+            {post.status === 'rejected' && (
+              <button onClick={handleRestore} disabled={!!action}
+                style={{ fontSize: 11, color: '#7fb95a', background: '#1c3310', border: '1px solid #2f5220', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', marginRight: 6 }}>
+                Restore — it's a lead
+              </button>
+            )}
+            {post.status === 'applied' ? (
+              <span style={{ fontSize: 11, color: '#7fb95a', padding: '4px 10px', marginRight: 6 }}>✓ Applied</span>
+            ) : (
+              <button onClick={handleApplied} disabled={!!action}
+                style={{ fontSize: 11, color: '#cfcfcf', background: '#1a1a1a', border: '1px solid #262626', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', marginRight: 6 }}>
+                Mark applied
+              </button>
+            )}
             {message?.send_after && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 9px', background: '#1a1a1a', border: '1px solid #262626', borderRadius: 6 }}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#fbbf24', flexShrink: 0 }}>
