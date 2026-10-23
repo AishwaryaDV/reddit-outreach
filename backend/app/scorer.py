@@ -112,6 +112,12 @@ def _load_judge_prompt() -> str:
     return (_PROMPTS_DIR.parent / "judge" / "v1.md").read_text()
 
 
+@lru_cache
+def _load_profile() -> str:
+    p = _PROMPTS_DIR.parent.parent / "profile.yaml"
+    return p.read_text() if p.exists() else ""
+
+
 def _validate_judge(text: str) -> JudgeResult | None:
     data = _extract_json(text)
     if data is None:
@@ -125,7 +131,10 @@ def _validate_judge(text: str) -> JudgeResult | None:
 async def judge_draft(title: str, draft: str) -> JudgeResult:
     """Grade a drafted DM against the rules. Fail-closed: any error → FAILED
     (hard-block), since sending a bad DM is worse than withholding one."""
-    user_message = f"POST TITLE: {title}\n\nDRAFTED DM:\n{draft}"
+    user_message = (
+        f"OWNER FACTS (the draft must not claim anything outside these):\n{_load_profile()}\n\n"
+        f"POST TITLE: {title}\n\nDRAFTED DM:\n{draft}"
+    )
     result = await complete("judge", _load_judge_prompt(), user_message, schema=JudgeResult, prefer_cheap=True)
     jr = _validate_judge(result.text)
     await log_call("judge", result, None, "judge-v1", parse_ok=jr is not None)

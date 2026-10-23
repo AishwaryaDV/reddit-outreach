@@ -1,0 +1,13 @@
+# Owner facts. Drafts must not claim anything outside this; the judge flags fabrication.
+name: Aishwarya
+experience_years: 4
+role: fullstack developer + AI engineer
+frontend: React, Next.js, SvelteKit, TypeScript, Tailwind
+backend: Python, FastAPI, Node, PostgreSQL, async APIs, REST, WebSockets
+ai: LLM apps (chatbots, RAG, agents), embeddings, vector DBs, Claude/OpenAI/Gemini APIs, prompt engineering
+projects:
+  - "Offroute — travel-route app (Next.js/TS, FastAPI/PostGIS)"
+  - "this Reddit outreach AI tool"
+  - "SimuFlow — distributed-systems simulator"
+  - "TripLedger — group expense splitter"
+portfolio: https://aishwaryadv.space
