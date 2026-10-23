@@ -61,6 +61,23 @@ def _validate(text: str) -> tuple[ScoreResult | None, str | None]:
         return None, "; ".join(err["msg"] for err in e.errors())[:200]
 
 
+# Context engineering — the scorer prompt doesn't need raw 10k-40k-char bodies.
+# Bound the body (keep head + tail, where hiring details cluster), collapse
+# whitespace, and mask URLs (not needed to score, and a token/injection cost).
+BODY_CHAR_CAP = 2500
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _compress_body(body: str | None, cap: int = BODY_CHAR_CAP) -> str:
+    if not body:
+        return ""
+    text = _URL_RE.sub("[link]", re.sub(r"\s+", " ", body)).strip()
+    if len(text) <= cap:
+        return text
+    head = cap * 2 // 3
+    return text[:head].rstrip() + " […] " + text[-(cap - head):].lstrip()
+
+
 async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None = None) -> dict | None:
     """Score a post and draft a DM, validated against the ScoreResult schema.
 
@@ -80,7 +97,7 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
     recent_context = ""
     if recent_drafts:
         recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
-    user_message = f"Post title: {title}\n\nPost body: {body or '(no body)'}{recent_context}"
+    user_message = f"Post title: {title}\n\nPost body: {_compress_body(body) or '(no body)'}{recent_context}"
 
     result = await complete("score", system_prompt, user_message, schema=ScoreResult)
     sr, err = _validate(result.text)
