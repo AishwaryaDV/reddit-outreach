@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from app.config import (
     CLAUDE_MAX_BUDGET_USD, CLAUDE_MAX_PER_HOUR, CLAUDE_MAX_PER_MIN,
     CLAUDE_MODEL, DAILY_LLM_CAP, GEMINI_API_KEY, GEMINI_FALLBACK_MODELS, GEMINI_MODEL, LLM_MODE,
+    TRIAGE_MODEL,
 )
 from app.db import get_session_factory
 from app.models import LLMCall
@@ -159,14 +160,15 @@ def _gemini_models() -> list[str]:
 _TRANSIENT = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "500", "INTERNAL", "deadline", "timeout")
 
 
-async def _call_gemini(system_prompt: str, user_message: str, fell_back: bool, schema=None) -> LLMResult:
+async def _call_gemini(system_prompt: str, user_message: str, fell_back: bool, schema=None, model: str | None = None) -> LLMResult:
     from google.genai import types
     config_kwargs = dict(system_instruction=system_prompt, response_mime_type="application/json")
     if schema is not None:
         config_kwargs["response_schema"] = schema  # Gemini enforces the Pydantic shape
     config = types.GenerateContentConfig(**config_kwargs)
     last_err = None
-    for model in _gemini_models():
+    models = [model] if model else _gemini_models()
+    for model in models:
         for attempt in range(2):  # one retry per model on transient errors
             start = time.monotonic()
             try:
@@ -203,6 +205,19 @@ async def complete(step: str, system_prompt: str, user_message: str, schema=None
         if cached is None:
             raise RuntimeError(f"replay: no cached response for step={step} key={key}")
         return LLMResult(text=cached, backend="replay", model="replay", fell_back=False, latency_ms=0, cost_usd=0.0)
+
+    # Difficulty routing: triage is a cheap classify — always the cheapest Gemini,
+    # never Claude (keep the expensive tier for the deep score).
+    if step == "triage":
+        try:
+            result = await _call_gemini(system_prompt, user_message, fell_back=False, schema=schema, model=TRIAGE_MODEL)
+        except Exception as e:
+            logger.error("Triage Gemini call failed: %s", str(e)[:200])
+            return LLMResult(text="", backend="gemini", model=TRIAGE_MODEL, fell_back=False,
+                             latency_ms=0, cost_usd=0.0, error=str(e)[:500])
+        if result.text:
+            _write_cache(key, result.text)
+        return result
 
     result = None
     tried_claude = await _claude_budget_available()
