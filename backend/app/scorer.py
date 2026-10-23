@@ -9,7 +9,8 @@ from pydantic import ValidationError
 from app.config import PORTFOLIO_URL, LLM_MODE, TRIAGE_SKIP_CONFIDENCE
 from app.database import get_setting
 from app.llm_client import complete, log_call, quota_exceeded
-from app.schemas import ScoreResult, TriageResult
+from app.guardrails import enforce_url_allowlist, wrap_untrusted
+from app.schemas import ScoreResult, TriageResult, JudgeResult
 
 logger = logging.getLogger(__name__)
 
@@ -97,13 +98,40 @@ async def triage(title: str, body: str) -> tuple[bool, float]:
     """Cheap first-pass: is this plausibly a real paid dev-hire? Returns
     (is_hire, confidence). On any failure returns (True, 0.0) so the post falls
     through to the deep score — we never drop a post on a triage error."""
-    user_message = f"Post title: {title}\n\nPost body: {_compress_body(body) or '(no body)'}"
+    user_message = wrap_untrusted(title, _compress_body(body))
     result = await complete("triage", _load_triage_prompt(), user_message, schema=TriageResult)
     tr = _validate_triage(result.text)
     await log_call("triage", result, None, "triage-v1", parse_ok=tr is not None)
     if tr is None:
         return True, 0.0
     return tr.decision == "hire", tr.confidence
+
+
+@lru_cache
+def _load_judge_prompt() -> str:
+    return (_PROMPTS_DIR.parent / "judge" / "v1.md").read_text()
+
+
+def _validate_judge(text: str) -> JudgeResult | None:
+    data = _extract_json(text)
+    if data is None:
+        return None
+    try:
+        return JudgeResult.model_validate(data)
+    except ValidationError:
+        return None
+
+
+async def judge_draft(title: str, draft: str) -> JudgeResult:
+    """Grade a drafted DM against the rules. Fail-closed: any error → FAILED
+    (hard-block), since sending a bad DM is worse than withholding one."""
+    user_message = f"POST TITLE: {title}\n\nDRAFTED DM:\n{draft}"
+    result = await complete("judge", _load_judge_prompt(), user_message, schema=JudgeResult, prefer_cheap=True)
+    jr = _validate_judge(result.text)
+    await log_call("judge", result, None, "judge-v1", parse_ok=jr is not None)
+    if jr is None:
+        return JudgeResult(passed=False, reasons=["judge could not evaluate the draft"])
+    return jr
 
 
 async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None = None) -> dict | None:
@@ -133,7 +161,7 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
     recent_context = ""
     if recent_drafts:
         recent_context = "\n\nRecent messages sent (vary from these):\n" + "\n---\n".join(recent_drafts)
-    user_message = f"Post title: {title}\n\nPost body: {_compress_body(body) or '(no body)'}{recent_context}"
+    user_message = wrap_untrusted(title, _compress_body(body)) + recent_context
 
     result = await complete("score", system_prompt, user_message, schema=ScoreResult, prefer_cheap=triaged_out)
     sr, err = _validate(result.text)
@@ -154,6 +182,18 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
 
     draft = sr.draft if sr.score > 2 else ""
     reason = "; ".join(sr.reasons) or ("; ".join(sr.red_flags) if sr.red_flags else "")
+
+    # Guardrails on the draft: output URL allowlist + LLM-judge hard-block.
+    if draft:
+        draft, url_violation = enforce_url_allowlist(draft, await _get_portfolio_url())
+        verdict = await judge_draft(title, draft)
+        if not verdict.passed:
+            logger.info("Draft failed judge — withholding: %s", "; ".join(verdict.reasons)[:100])
+            reason = (reason + " | draft withheld (judge): " + "; ".join(verdict.reasons)).strip(" |")
+            draft = ""
+        elif url_violation:
+            reason = (reason + " | stripped a non-portfolio link from the draft").strip(" |")
+
     return {
         "score": sr.score,
         "reason": reason,
