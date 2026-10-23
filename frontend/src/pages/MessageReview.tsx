@@ -237,6 +237,30 @@ export default function MessageReview() {
             <div style={{ fontSize: 13, lineHeight: 1.65, color: '#b5b5b5', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
               {post.body || <span style={{ color: '#5a5a5a', fontStyle: 'italic' }}>No post body</span>}
             </div>
+
+            {post.contact_links && post.contact_links.length > 0 && (
+              <div style={{ marginTop: 14, padding: '10px 12px', background: '#14210f', border: '1px solid #2a4a1a', borderRadius: 10 }}>
+                <div style={{ fontSize: 11, color: '#7fb95a', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                  Apply / contact here first
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {post.contact_links.map((c, i) => (
+                    <a
+                      key={i}
+                      href={c.kind === 'email' ? `mailto:${c.value}` : c.value}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cfe8bf', background: '#1c3310', border: '1px solid #2f5220', borderRadius: 8, padding: '6px 10px', textDecoration: 'none', maxWidth: 340 }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{c.label}</span>
+                      <span style={{ color: '#8fbf6f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {c.value.replace(/^https?:\/\//, '')}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Draft panel — pinned to bottom */}
