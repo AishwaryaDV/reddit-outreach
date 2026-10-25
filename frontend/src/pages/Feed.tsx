@@ -29,6 +29,7 @@ const STATUS_TABS = [
   { label: 'Approved', value: 'approved' },
   { label: 'Disapproved', value: 'disapproved' },
   { label: 'Rejected', value: 'rejected' },
+  { label: 'Applied', value: 'applied' },
   { label: 'Search', value: 'search' },
 ]
 

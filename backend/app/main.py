@@ -1,5 +1,7 @@
 import logging
 import asyncio
+import json
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -234,8 +236,10 @@ async def list_posts(
             conditions.append(Post.status == "cancelled")
         elif tab == "rejected":
             conditions.append(Post.status == "rejected")
-        else:  # "all" — opportunities only; keep the reject noise out of the feed
-            conditions.append(Post.status != "rejected")
+        elif tab == "applied":
+            conditions.append(Post.status == "applied")
+        else:  # "all" — opportunities only; hide rejects + already-applied
+            conditions.append(Post.status.notin_(["rejected", "applied"]))
 
     term = q.strip()
     if term:
@@ -321,6 +325,53 @@ async def cancel_post(post_id: str):
         await session.execute(update(Message).where(Message.post_id == pid).values(status="cancelled"))
         await session.commit()
     return {"status": "cancelled"}
+
+
+_CORRECTIONS = Path(__file__).resolve().parent.parent / "corrections.jsonl"
+
+
+def _log_correction(post, label: str, note: str = "") -> None:
+    """Append a human correction (the scorer got this wrong) → feeds the golden
+    set + the next prompt version. Best-effort."""
+    try:
+        with open(_CORRECTIONS, "a") as f:
+            f.write(json.dumps({
+                "id": post.reddit_post_id or str(post.id),
+                "title": post.title, "body": post.body, "subreddit": post.subreddit,
+                "scorer_score": post.score, "human_label": label, "note": note,
+                "ts": datetime.now(tz=timezone.utc).isoformat(),
+            }) + "\n")
+    except Exception:
+        pass  # correction logging is best-effort
+
+
+@app.post("/posts/{post_id}/restore")
+async def restore_post(post_id: str):
+    """Recover a mis-rejected post: move it back to the feed as an actionable
+    opportunity, and log the correction (self-heal — feeds the golden set)."""
+    pid = _uuid_or_404(post_id)
+    async with get_session_factory()() as session:
+        post = await session.get(Post, pid)
+        if post is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+        _log_correction(post, "opportunity", note="restored from rejected")
+        post.status = "new"
+        await session.commit()
+    return {"status": "new"}
+
+
+@app.post("/posts/{post_id}/applied")
+async def mark_applied(post_id: str):
+    """Mark that you applied to this post (form / email / comment / DM) — tracks
+    your outreach across channels, not just Reddit DMs."""
+    pid = _uuid_or_404(post_id)
+    async with get_session_factory()() as session:
+        post = await session.get(Post, pid)
+        if post is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+        post.status = "applied"
+        await session.commit()
+    return {"status": "applied"}
 
 
 @app.post("/messages/{message_id}/outcome")
