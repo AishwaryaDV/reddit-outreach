@@ -26,3 +26,8 @@ over-rejected them). Changes:
   paid gigs now surface. Narrow web skills (HTML email, WordPress/Shopify) are in-scope.
 Motivated by 3 real gigs v1 wrongly scored 1 (r/DevsForHire crypto full-stack, r/hiredev
 backend contract, r/FreelanceIndia HTML email).
+
+## v3 (2026-10-24)
+Experience level is no longer a disqualifier: a role asking for FEWER years than the owner has
+(junior / entry / 1-2 YOE) is still a fit — over-qualified is fine — so a lucrative under-level
+gig gets surfaced instead of skipped. (Owner applies to these when the budget is good.)
