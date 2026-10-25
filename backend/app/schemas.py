@@ -7,7 +7,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+from app.contacts import extract_contacts
 
 
 class PostOut(BaseModel):
@@ -26,6 +28,12 @@ class PostOut(BaseModel):
     score_reason: str | None
     num_comments: int
     reddit_upvotes: int
+
+    @computed_field
+    @property
+    def contact_links(self) -> list[dict]:
+        """Apply/contact links found in the body (Google Form, email, Discord…)."""
+        return extract_contacts(self.body or "")
 
 
 class MessageOut(BaseModel):

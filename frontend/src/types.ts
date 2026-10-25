@@ -14,6 +14,7 @@ export interface Post {
   score_reason?: string | null
   num_comments: number
   reddit_upvotes: number
+  contact_links?: { kind: string; value: string; label: string }[]
 }
 
 export interface Message {
