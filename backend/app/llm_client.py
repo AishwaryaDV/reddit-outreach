@@ -23,8 +23,8 @@ from sqlalchemy import func, select
 
 from app.config import (
     CLAUDE_MAX_BUDGET_USD, CLAUDE_MAX_PER_HOUR, CLAUDE_MAX_PER_MIN,
-    CLAUDE_MODEL, DAILY_LLM_CAP, GEMINI_API_KEY, GEMINI_FALLBACK_MODELS, GEMINI_MODEL, LLM_MODE,
-    TRIAGE_MODEL,
+    CLAUDE_MODEL, DAILY_LLM_CAP, GEMINI_API_KEY, GEMINI_FALLBACK_MODELS, GEMINI_MODEL,
+    GEMINI_TIMEOUT_SECONDS, LLM_MODE, TRIAGE_MODEL,
 )
 from app.db import get_session_factory
 from app.models import LLMCall
@@ -172,8 +172,11 @@ async def _call_gemini(system_prompt: str, user_message: str, fell_back: bool, s
         for attempt in range(2):  # one retry per model on transient errors
             start = time.monotonic()
             try:
-                resp = await _gemini().aio.models.generate_content(
-                    model=model, contents=user_message, config=config,
+                resp = await asyncio.wait_for(
+                    _gemini().aio.models.generate_content(
+                        model=model, contents=user_message, config=config,
+                    ),
+                    timeout=GEMINI_TIMEOUT_SECONDS,
                 )
                 latency = int((time.monotonic() - start) * 1000)
                 um = getattr(resp, "usage_metadata", None)
@@ -183,6 +186,12 @@ async def _call_gemini(system_prompt: str, user_message: str, fell_back: bool, s
                     input_tokens=_tok(um, "prompt_token_count"),
                     output_tokens=_tok(um, "candidates_token_count"),
                 )
+            except asyncio.TimeoutError as e:
+                # Model stopped responding — don't retry it, fail over to the next.
+                last_err = e
+                logging.warning("Gemini model %s timed out after %ds — failing over",
+                                model, GEMINI_TIMEOUT_SECONDS)
+                break
             except Exception as e:
                 last_err = e
                 transient = any(t in str(e) for t in _TRANSIENT)

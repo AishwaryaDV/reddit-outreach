@@ -74,6 +74,10 @@ LLM_MODE = os.getenv("LLM_MODE", "live")  # live | replay (replay serves cached 
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
 GEMINI_FALLBACK_MODELS = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite,gemini-flash-lite-latest")
+# Per-call wall-clock cap on a Gemini request. Without it, a model that stops
+# responding mid-request stalls the whole pipeline forever (no failover). On
+# timeout we abandon that model and fall through to the next in the list.
+GEMINI_TIMEOUT_SECONDS = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "25"))
 # Difficulty routing — a cheap triage classifies "real paid dev-hire?" before the
 # expensive deep score. Triage runs on the cheapest model; only a CONFIDENT "no"
 # short-circuits (protects recall — an unsure triage passes through to deep score).
