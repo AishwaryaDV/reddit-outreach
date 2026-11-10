@@ -18,14 +18,6 @@ from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import delete
 
-# --- Demo routing: skip the slow Claude tier, score everything on Gemini. ---
-# (Pure routing override — the pipeline logic is unchanged; both triage branches
-# just land on Gemini so the seed finishes in minutes.)
-import app.llm_client as llm_client
-async def _no_claude() -> bool:
-    return False
-llm_client._claude_budget_available = _no_claude
-
 from app.db import get_session_factory
 from app.models import Post, Message
 from app.database import save_post, save_message, post_exists
