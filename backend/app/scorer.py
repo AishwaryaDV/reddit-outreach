@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "v3"
 # Reported by GET /status.
-SCORER_MODE = "replay" if LLM_MODE == "replay" else "claude_sdk+gemini"
+SCORER_MODE = "replay" if LLM_MODE == "replay" else "claude_sdk"
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts" / "scorer"
 
@@ -161,10 +161,9 @@ async def score_and_draft(title: str, body: str, recent_drafts: list[str] | None
     # Difficulty routing — cheap triage first. A CONFIDENT "not a hire" still gets a
     # full rubric score, just on cheap Gemini (route, don't drop — so a wrong triage
     # can't silently kill a lead); only triaged-in posts spend the strong Claude tier.
-    is_hire, conf = await triage(title, body)
-    triaged_out = not is_hire and conf >= TRIAGE_SKIP_CONFIDENCE
-    if triaged_out:
-        logger.info("Triaged out (not_hire, conf=%.2f) — full score on cheap tier", conf)
+    # Single backend (Claude SDK) — no cheap tier to route to, so skip the triage
+    # classifier and score every kept post directly (one Claude call per post).
+    triaged_out = False
 
     system_prompt = await _build_system_prompt()
     recent_context = ""
