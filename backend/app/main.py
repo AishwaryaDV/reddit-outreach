@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import (
-    WATCHER_INTERVAL_MINUTES, GMAIL_USER, GMAIL_APP_PASSWORD, NOTIFY_EMAILS,
+    WATCHER_INTERVAL_MINUTES, WATCHER_ENABLED, GMAIL_USER, GMAIL_APP_PASSWORD, NOTIFY_EMAILS,
     APPROVAL_WINDOW_MIN, APPROVAL_WINDOW_MAX, DAILY_DM_CAP, DAILY_LLM_CAP,
     PORTFOLIO_URL, POST_RETENTION_DAYS, DRY_RUN, CORS_ORIGINS,
 )
@@ -54,14 +54,18 @@ def _spawn(coro):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler.add_job(run_watcher, "interval", minutes=WATCHER_INTERVAL_MINUTES, id="watcher")
     scheduler.add_job(run_cleanup, "cron", hour=3, minute=0, id="cleanup")
     scheduler.add_job(process_auto_sends, "interval", minutes=1, id="auto_send")
-    scheduler.start()
-    logging.info("Watcher scheduler started — running every %d minutes", WATCHER_INTERVAL_MINUTES)
-    # Backfill the last 24h on boot so downtime doesn't lose posts (the 10-min
-    # scheduled runs use the tighter 'hour' window for freshness).
-    _spawn(run_watcher(time_filter="day"))
+    if WATCHER_ENABLED:
+        scheduler.add_job(run_watcher, "interval", minutes=WATCHER_INTERVAL_MINUTES, id="watcher")
+        scheduler.start()
+        logging.info("Watcher scheduler started — running every %d minutes", WATCHER_INTERVAL_MINUTES)
+        # Backfill the last 24h on boot so downtime doesn't lose posts (the 10-min
+        # scheduled runs use the tighter 'hour' window for freshness).
+        _spawn(run_watcher(time_filter="day"))
+    else:
+        scheduler.start()
+        logging.info("WATCHER_ENABLED=false — no Reddit fetching (demo/dev mode)")
     yield
     scheduler.shutdown()
     logging.info("Scheduler stopped")

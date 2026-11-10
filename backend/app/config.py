@@ -44,6 +44,9 @@ SEARCH_SORT = os.getenv("SEARCH_SORT", "relevance")  # 'relevance' surfaces real
 SEARCH_LIMIT = int(os.getenv("SEARCH_LIMIT", "100"))
 
 WATCHER_INTERVAL_MINUTES = 10
+# Set WATCHER_ENABLED=false to run the API without any Reddit fetching (demo / dev
+# mode): no boot backfill and no scheduled sweeps. Default on preserves production.
+WATCHER_ENABLED = os.getenv("WATCHER_ENABLED", "true").lower() != "false"
 APPROVAL_WINDOW_MIN = 2
 APPROVAL_WINDOW_MAX = 5
 DAILY_DM_CAP = 20
