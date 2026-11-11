@@ -2,7 +2,7 @@
 
 A self-hosted AI pipeline that watches Reddit for freelance/hiring posts, decides
 which are a real fit for the owner, drafts a grounded outreach message, and surfaces
-the contact path for a human to apply. Built around a single cost-aware LLM chokepoint
+the contact path for a human to apply. Built around a single pluggable LLM chokepoint
 with guardrails, observability, and a feedback loop.
 
 > This file is the narration map for the demo video — each diagram is a scene, and the
@@ -22,8 +22,7 @@ flowchart LR
     end
 
     subgraph Brain["AI pipeline (one LLM chokepoint)"]
-        PF[Pre-filter + dedup] --> TR[Triage / route]
-        TR --> SC[Score + draft]
+        PF[Pre-filter + dedup] --> SC[Score + draft]
         SC --> GR[Guardrails]
     end
 
@@ -46,7 +45,7 @@ flowchart LR
 **Talking points**
 - Everything is self-hosted: FastAPI + PostgreSQL + a React/TS SPA. No managed vendor lock-in.
 - The frontend never touches Reddit or the LLM directly — it only talks to the backend API.
-- Every LLM call is logged, so cost, latency, and routing are observable (Metrics page).
+- Every LLM call is logged, so cost, latency, and backend are observable (Metrics page).
 
 ---
 
@@ -64,14 +63,9 @@ flowchart TD
     E -->|disabled| Z
     E -->|enabled| Q{Daily LLM cap hit?}
     Q -->|yes, paused| Z
-    Q -->|no| T[Triage — cheap Flash-Lite]
+    Q -->|no| SC[Score + draft on Claude]
 
-    T --> ROUTE{Confident not a fit?}
-    ROUTE -->|yes| CHEAP[Full score on cheap Gemini<br/>prefer_cheap=True]
-    ROUTE -->|no / unsure| CLAUDE[Full score on Claude Haiku]
-
-    CHEAP --> S[ScoreResult: score, reasons, draft]
-    CLAUDE --> S
+    SC --> S[ScoreResult: score, reasons, draft]
 
     S --> SCJ{score <= 2?}
     SCJ -->|yes| REJ[(Persist as 'rejected'<br/>— audit, no draft)]
@@ -83,36 +77,41 @@ flowchart TD
 ```
 
 **Talking points**
-- **Route, don't drop.** Even posts triaged as "not a fit" still get a full score — just on
-  the *cheap* model. Nothing is silently discarded, so the Rejected tab is a real audit trail.
+- **Every kept post is scored** on the model — nothing is silently discarded, so the Rejected
+  tab is a real audit trail, not a black hole.
 - **Rejects are persisted** (score ≤ 2) with their reason, so "did we miss a lead?" is a scan,
   not a re-run of the LLM.
 - **Two guards before any spend:** a kill-switch (`scoring_enabled`) and a daily LLM cap.
 
 ---
 
-## 3. Cost-aware LLM routing
+## 3. Model backend (bring your own key)
 
 ```mermaid
 flowchart LR
-    IN[Post] --> TRI["triage()<br/>Flash-Lite — cheapest"]
-    TRI -->|hire / unsure| CLA["Claude Haiku<br/>(Agent SDK, rate-budgeted)"]
-    TRI -->|confident not_hire| GEM["Gemini Flash / Flash-Lite<br/>prefer_cheap=True"]
-    CLA --> OUT[Structured ScoreResult]
-    GEM --> OUT
-    CLA -. budget exhausted .-> GEM
+    IN[Post] --> COMP["llm_client.complete()<br/>single chokepoint"]
+    COMP --> SDK["Claude via subscription SDK<br/>(keyless — current)"]
+    COMP -. pluggable .-> ANT["Anthropic API key"]
+    COMP -. pluggable .-> OAI["OpenAI API key"]
+    SDK --> OUT[Structured ScoreResult]
+    ANT --> OUT
+    OAI --> OUT
     OUT --> V{Schema valid?}
     V -->|no| RETRY[Retry once] --> OUT
     V -->|yes| DONE([done])
 ```
 
 **Talking points**
-- One function — `llm_client.complete(step, system, user, schema, prefer_cheap)` — is the only
-  place that talks to a model. Routing, budgets, retries, and logging all live there.
-- Claude is the quality tier (no API key — runs on a rate-budgeted Agent SDK); Gemini is the
-  cheap/overflow tier. If Claude's budget is spent, it falls back to Gemini automatically.
+- One function — `llm_client.complete(step, system, user, schema)` — is the only place that
+  talks to a model. Backend selection, retries, and logging all live there.
+- **Single backend, bring-your-own-key.** Today it runs on Claude via the subscription SDK
+  (keyless); the same chokepoint is designed to swap to a user-supplied **Anthropic** or
+  **OpenAI** API key (usage-billed) when subscription limits are hit.
+- **Why not Gemini?** Its cheap tier over-rejected real, on-profile leads that Claude scored
+  8–9 and drafted — see [`MODEL_OBSERVATIONS.md`](./MODEL_OBSERVATIONS.md). So scoring
+  consolidated on Claude.
 - Outputs are **structured** (Pydantic / JSON schema) with a validate-then-retry-once loop.
-- `LLM_MODE=replay` gives deterministic, zero-cost runs for tests and demos.
+  A daily LLM cap is the cost guard; `LLM_MODE=replay` gives deterministic, zero-cost test runs.
 
 ---
 
@@ -222,11 +221,12 @@ flowchart TD
 2. **Review** a strong match — the grounded draft, the green **Apply / contact here first**
    block (Google Form / email), and Approve / Disapprove / Restore / Mark-applied.
 3. **Rejected tab** — the audit trail; restore one to show the correction loop.
-4. **Metrics** — calls, cost, p50/p95 latency, routing by backend, the funnel, rejects-by-score.
+4. **Metrics** — calls, cost, p50/p95 latency, calls by backend, the funnel, rejects-by-score.
 5. (Under the hood) `python -m tests.run_adversarial` — 5/5 injection attempts blocked.
 
 ---
 
 *Backend: FastAPI + PostgreSQL (SQLAlchemy async + Alembic) + APScheduler.
-Frontend: React 19 + TypeScript + Vite. LLM: Claude Haiku (Agent SDK) + Gemini, structured
-outputs, one routed chokepoint. See `docs/AI_UPGRADE_PLAN.md` for the full roadmap.*
+Frontend: React 19 + TypeScript + Vite. LLM: Claude via the subscription SDK, pluggable to an
+Anthropic/OpenAI API key, structured outputs through one chokepoint. See
+`docs/MODEL_OBSERVATIONS.md` for the backend decision and `docs/AI_UPGRADE_PLAN.md` for the roadmap.*
