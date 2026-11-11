@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { API, api } from '../lib/api'
 import type { Post } from '../types'
 import { timeAgo } from '../lib/time'
-import SetupChecklist from '../components/SetupChecklist'
 import CustomSelect from '../components/CustomSelect'
 
 const PAGE_SIZE = 20
@@ -131,8 +130,6 @@ export default function Feed() {
 
   return (
     <div>
-      <SetupChecklist />
-
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 16 }}>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 600, letterSpacing: -0.5, color: '#f5f5f5' }}>

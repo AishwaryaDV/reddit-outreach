@@ -23,8 +23,8 @@ from sqlalchemy import func, select
 
 from app.config import (
     CLAUDE_MAX_BUDGET_USD, CLAUDE_MAX_PER_HOUR, CLAUDE_MAX_PER_MIN,
-    CLAUDE_MODEL, DAILY_LLM_CAP, GEMINI_API_KEY, GEMINI_FALLBACK_MODELS, GEMINI_MODEL, LLM_MODE,
-    TRIAGE_MODEL,
+    CLAUDE_MODEL, DAILY_LLM_CAP, GEMINI_API_KEY, GEMINI_FALLBACK_MODELS, GEMINI_MODEL,
+    GEMINI_TIMEOUT_SECONDS, LLM_MODE, TRIAGE_MODEL,
 )
 from app.db import get_session_factory
 from app.models import LLMCall
@@ -172,8 +172,11 @@ async def _call_gemini(system_prompt: str, user_message: str, fell_back: bool, s
         for attempt in range(2):  # one retry per model on transient errors
             start = time.monotonic()
             try:
-                resp = await _gemini().aio.models.generate_content(
-                    model=model, contents=user_message, config=config,
+                resp = await asyncio.wait_for(
+                    _gemini().aio.models.generate_content(
+                        model=model, contents=user_message, config=config,
+                    ),
+                    timeout=GEMINI_TIMEOUT_SECONDS,
                 )
                 latency = int((time.monotonic() - start) * 1000)
                 um = getattr(resp, "usage_metadata", None)
@@ -183,6 +186,12 @@ async def _call_gemini(system_prompt: str, user_message: str, fell_back: bool, s
                     input_tokens=_tok(um, "prompt_token_count"),
                     output_tokens=_tok(um, "candidates_token_count"),
                 )
+            except asyncio.TimeoutError as e:
+                # Model stopped responding — don't retry it, fail over to the next.
+                last_err = e
+                logging.warning("Gemini model %s timed out after %ds — failing over",
+                                model, GEMINI_TIMEOUT_SECONDS)
+                break
             except Exception as e:
                 last_err = e
                 transient = any(t in str(e) for t in _TRANSIENT)
@@ -206,39 +215,16 @@ async def complete(step: str, system_prompt: str, user_message: str, schema=None
             raise RuntimeError(f"replay: no cached response for step={step} key={key}")
         return LLMResult(text=cached, backend="replay", model="replay", fell_back=False, latency_ms=0, cost_usd=0.0)
 
-    # Difficulty routing: triage is a cheap classify — always the cheapest Gemini,
-    # never Claude (keep the expensive tier for the deep score).
-    if step == "triage":
-        try:
-            result = await _call_gemini(system_prompt, user_message, fell_back=False, schema=schema, model=TRIAGE_MODEL)
-        except Exception as e:
-            logger.error("Triage Gemini call failed: %s", str(e)[:200])
-            return LLMResult(text="", backend="gemini", model=TRIAGE_MODEL, fell_back=False,
-                             latency_ms=0, cost_usd=0.0, error=str(e)[:500])
-        if result.text:
-            _write_cache(key, result.text)
-        return result
-
-    result = None
-    # prefer_cheap (a triaged-out post) skips Claude and scores on Gemini — a cheap
-    # second-layer rubric pass instead of dropping the post.
-    tried_claude = (not prefer_cheap) and await _claude_budget_available()
-    if tried_claude:
-        try:
-            result = await _call_claude(system_prompt, user_message)
-        except Exception as e:
-            logger.warning("Claude call failed (%s) — overflowing to Gemini", str(e)[:150])
-            result = None
-    if result is None:
-        try:
-            result = await _call_gemini(system_prompt, user_message, fell_back=tried_claude, schema=schema)
-        except Exception as e:
-            logger.error("Gemini call failed: %s", str(e)[:200])
-            return LLMResult(
-                text="", backend="gemini", model=GEMINI_MODEL, fell_back=tried_claude,
-                latency_ms=0, cost_usd=0.0, error=str(e)[:500],
-            )
-
+    # Single backend: Claude via the subscription SDK. Gemini retired for
+    # over-rejecting real leads (see docs/MODEL_OBSERVATIONS.md); the pluggable
+    # Anthropic/OpenAI API-key backends come in when subscription limits are hit.
+    # `schema`/`prefer_cheap` are unused with one backend.
+    try:
+        result = await _call_claude(system_prompt, user_message)
+    except Exception as e:
+        logger.error("Claude call failed: %s", str(e)[:200])
+        return LLMResult(text="", backend="claude_sdk", model=CLAUDE_MODEL,
+                         fell_back=False, latency_ms=0, cost_usd=0.0, error=str(e)[:500])
     if result.text:
         _write_cache(key, result.text)
     return result
